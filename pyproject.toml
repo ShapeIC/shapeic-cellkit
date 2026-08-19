@@ -1,0 +1,9 @@
+[project]
+name = "shapeic-cellkit"
+version = "0.1.0"
+description = "Library of primitives"
+requires-python = ">=3.11"
+
+dependencies = [
+    "klayout",
+]
