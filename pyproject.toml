@@ -6,4 +6,11 @@ requires-python = ">=3.11"
 
 dependencies = [
     "klayout",
+    "psutil",
 ]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["primitives*"]
+exclude = ["pdk*"]
+namespaces = true
