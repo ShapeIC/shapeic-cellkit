@@ -2,15 +2,10 @@
 name = "shapeic-cellkit"
 version = "0.1.0"
 description = "Library of primitives"
-requires-python = ">=3.11"
-
-dependencies = [
-    "klayout",
-    "psutil",
-]
+requires-python = ">=3.12"
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["primitives*"]
+where = ["src"]
+include = ["shapeic_cellkit*"]
 exclude = ["pdk*"]
 namespaces = true

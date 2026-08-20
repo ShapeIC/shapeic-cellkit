@@ -33,3 +33,7 @@ clone-ihp-sg13cmos5l-pdk: clone-ihp-sg13g2-pdk
 .PHONY: clean
 clean:
 	rm -rf pdk
+
+.PHONY: clone-ihp-gdsfactory
+clone-ihp-gdsfactory:
+	git clone git@github.com:lild4d4/IHP.git

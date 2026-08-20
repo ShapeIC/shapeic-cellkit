@@ -1,2 +1,7 @@
 shapeic_cellkit.egg-info
+__pycache__/
+*.py[cod]
 pdk
+.venv
+IHP
+.python-version
