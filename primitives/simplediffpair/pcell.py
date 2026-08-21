@@ -4,24 +4,10 @@ from gdsfactory.components import bbox
 from ihp import PDK, tech
 from ihp.cells import nmos
 from ihp.cells.passives import guard_ring
-from shapeic_cellkit.utils import populate_via_stack, connect_ports_to_bus, connect_gates_to_bus
+from shapeic_cellkit.utils import connect_ports_to_bus, connect_gates_to_bus, get_sd_ports_even_odd
 
 PDK.activate()
-   
-def get_sd_ports_even_odd(ref):
-    sd_ports = []
 
-    for p in ref.ports:
-        if p.name.startswith("SD"):
-            idx = int(p.name.replace("SD", ""))
-            sd_ports.append((idx, p))
-
-    sd_ports = sorted(sd_ports, key=lambda x: x[0])
-
-    even_ports = [p for idx, p in sd_ports if idx % 2 == 0]
-    odd_ports  = [p for idx, p in sd_ports if idx % 2 == 1]
-
-    return even_ports, odd_ports   
 
 
 @gf.cell

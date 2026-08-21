@@ -4,6 +4,21 @@ from ihp import PDK, tech
 from ihp.cells import via_stack
 from ihp.cells import place_contacts
 
+def get_sd_ports_even_odd(ref):
+    sd_ports = []
+
+    for p in ref.ports:
+        if p.name.startswith("SD"):
+            idx = int(p.name.replace("SD", ""))
+            sd_ports.append((idx, p))
+
+    sd_ports = sorted(sd_ports, key=lambda x: x[0])
+
+    even_ports = [p for idx, p in sd_ports if idx % 2 == 0]
+    odd_ports  = [p for idx, p in sd_ports if idx % 2 == 1]
+
+    return even_ports, odd_ports   
+
 def populate_via_stack(c, column_width=10.0, row_width=10.0, center=[0,0], bottom_layer="Metal1", top_layer="Metal2"):
 
         
