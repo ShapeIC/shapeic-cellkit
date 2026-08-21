@@ -129,7 +129,14 @@ def connect_ports_to_bus(
                 (x + polyBusWidth / 2, y + polyBusWidth / 2),
                 (x - polyBusWidth / 2, y + polyBusWidth / 2),
             ],
-            layer=layer,
+            layer="Metal1drawing",
+        )
+
+        populate_via_stack(
+            c,
+            column_width=polyBusWidth,
+            row_width=polyBusWidth,
+            center=(x,bus_y)
         )
 
 def connect_gates_to_bus(

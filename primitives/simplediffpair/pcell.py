@@ -45,20 +45,10 @@ def simplediffpair(
     nmos0S, nmos0D = get_sd_ports_even_odd(nmos0)
     nmos1S, nmos1D = get_sd_ports_even_odd(nmos1)
 
-    for port in nmos0S+nmos0D+nmos1S+nmos1D:
-        populate_via_stack(
-            c,
-            column_width=port.width,
-            row_width=0.3,
-            center=port.center,
-            bottom_layer="Metal1",
-            top_layer="Metal2"
-        )
-
     connect_ports_to_bus(
         c,
         nmos0S+nmos1S,
-        distance=wf/2+polyExt+routingSpacing,
+        distance=wf/2-0.32/2,
         layer="Metal2drawing",
         bus_side="bottom",
         pin_name="S"
