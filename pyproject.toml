@@ -9,3 +9,9 @@ where = ["src"]
 include = ["shapeic_cellkit*"]
 exclude = ["pdk*"]
 namespaces = true
+
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+extraPaths = ["IHP", "src"]
