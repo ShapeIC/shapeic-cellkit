@@ -60,34 +60,39 @@ def simplediffpair(
         nmos0S+nmos1S,
         distance=wf/2+polyExt+routingSpacing,
         layer="Metal2drawing",
-        bus_side="bottom"
+        bus_side="bottom",
+        pin_name="S"
     )
     connect_ports_to_bus(
         c,
         nmos0D,
         distance=wf/2+polyExt+routingSpacing,
         layer="Metal2drawing",
-        bus_side="top"
+        bus_side="top",
+        pin_name="D0"
     )
     connect_ports_to_bus(
         c,
         nmos1D,
         distance=wf/2+polyExt+routingSpacing,
         layer="Metal2drawing",
-        bus_side="top"
+        bus_side="top",
+        pin_name="D1"
     )
 
     connect_gates_to_bus(
         c,
         nmos0,
         length,
-        "GatPolydrawing"
+        "GatPolydrawing",
+        pin_name="G0"
     )
     connect_gates_to_bus(
         c,
         nmos1,
         length,
-        "GatPolydrawing"
+        "GatPolydrawing",
+        pin_name="G1"
     )
 
     guard_bbox = (

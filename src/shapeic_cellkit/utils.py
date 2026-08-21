@@ -69,14 +69,21 @@ def connect_ports_to_bus(
     ports,
     distance=0.5,
     layer="Metal1drawing",
-    bus_side="bottom"
+    bus_side="bottom",
+    pin_name=None
   ):
     if layer=="Metal1drawing":
         polyBusWidth = gf.get_cross_section("metal1_routing").width
+        pin_layer = "Metal1pin"
+        text_layer = "Metal1text"
     elif layer=="Metal2drawing":
         polyBusWidth = gf.get_cross_section("metal2_routing").width
+        pin_layer = "Metal2pin"
+        text_layer = "Metal2text"
     else:
         polyBusWidth = gf.get_cross_section("metal1_routing").width
+        pin_layer = "Metal1pin"
+        text_layer = "Metal1text"
 
     xs = [float(port.center[0]) for port in ports]
     ys = [float(port.center[1]) for port in ports]
@@ -99,6 +106,17 @@ def connect_ports_to_bus(
         ],
         layer=layer,
     )
+    if pin_name != None:
+        c.add_polygon(
+            [
+                (min(xs) - polyBusWidth / 2, bus_y - polyBusWidth / 2),
+                (max(xs) + polyBusWidth / 2, bus_y - polyBusWidth / 2),
+                (max(xs) + polyBusWidth / 2, bus_y + polyBusWidth / 2),
+                (min(xs) - polyBusWidth / 2, bus_y + polyBusWidth / 2),
+            ],
+            layer=pin_layer,
+        )
+        c.add_label(text=pin_name, position=((min(xs)+max(xs))/2, bus_y), layer=text_layer)
 
     # Ramas verticales
     for port in ports:
@@ -119,7 +137,8 @@ def connect_gates_to_bus(
     device,
     length,
     layer="Metal1drawing",
-    bus_side="bottom"
+    bus_side="bottom",
+    pin_name=None
   ):
     
     polyBusWidth = 0.32
@@ -147,13 +166,24 @@ def connect_gates_to_bus(
         ],
         layer=layer,
     )
-
     populate_contact(
         c,
         column_width = polyBusWidth,
         row_width = max(xs)-min(xs)+length,
         center = ((min(xs)+max(xs))/2, bus_y)
     )
+
+    if pin_name != None:
+        c.add_polygon(
+            [
+                (min(xs) - length / 2, bus_y - polyBusWidth / 2),
+                (max(xs) + length / 2, bus_y - polyBusWidth / 2),
+                (max(xs) + length / 2, bus_y + polyBusWidth / 2),
+                (min(xs) - length / 2, bus_y + polyBusWidth / 2),
+            ],
+            layer="Metal1pin",
+        )
+        c.add_label(text=pin_name, position=((min(xs)+max(xs))/2, bus_y), layer="Metal1text")
 
 
 def get_gates(ref):
