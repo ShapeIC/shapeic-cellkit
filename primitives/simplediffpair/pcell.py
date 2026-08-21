@@ -1,7 +1,6 @@
 import gdsfactory as gf
 from gdsfactory import Component
-from gdsfactory.components import bbox
-from ihp import PDK, tech
+from ihp import PDK
 from ihp.cells import nmos
 from ihp.cells.passives import guard_ring
 from shapeic_cellkit.utils import connect_ports_to_bus, connect_gates_to_bus, get_sd_ports_even_odd

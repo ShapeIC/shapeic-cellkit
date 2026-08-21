@@ -1,6 +1,5 @@
 import gdsfactory as gf
-from gdsfactory import Component
-from ihp import PDK, tech
+from ihp import tech
 from ihp.cells import via_stack
 from ihp.cells import place_contacts
 
@@ -28,7 +27,7 @@ def populate_via_stack(c, column_width=10.0, row_width=10.0, center=[0,0], botto
 
     column_num_float = (column_width-via1_enc+via1_spacing)/(via1_size+via1_spacing)
     column_num_int = int(column_num_float)
-    column_num_dec = column_num_float-column_num_int
+    #column_num_dec = column_num_float-column_num_int
 
     row_num_float = (row_width-via1_enc+via1_spacing)/(via1_size+via1_spacing)
     row_num_int = int(row_num_float)
@@ -168,7 +167,7 @@ def connect_gates_to_bus(
     gates = get_gates(device)
 
     xs = [float(gate.center[0]) for gate in gates]
-    ys = [float(gate.center[1]) for gate in gates]
+    #ys = [float(gate.center[1]) for gate in gates]
 
     # Bus debajo de los dispositivos
     if bus_side=="bottom":
@@ -215,7 +214,7 @@ def get_gates(ref):
         if p.name=="G":
             continue
         if p.name.startswith("G"):
-            idx = int(p.name.replace("G", ""))
+            #idx = int(p.name.replace("G", ""))
             gates.append(p)
 
     return gates
