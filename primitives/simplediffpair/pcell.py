@@ -1,8 +1,10 @@
 import gdsfactory as gf
 from gdsfactory import Component
+from gdsfactory.components import bbox
 from ihp import PDK, tech
 from ihp.cells import nmos
-from shapeic_cellkit.utils import populate_via_stack
+from ihp.cells.passives import guard_ring
+from shapeic_cellkit.utils import populate_via_stack, connect_ports_to_bus, connect_gates_to_bus
 
 PDK.activate()
    
@@ -19,7 +21,8 @@ def get_sd_ports_even_odd(ref):
     even_ports = [p for idx, p in sd_ports if idx % 2 == 0]
     odd_ports  = [p for idx, p in sd_ports if idx % 2 == 1]
 
-    return even_ports, odd_ports
+    return even_ports, odd_ports   
+
 
 @gf.cell
 def simplediffpair(
@@ -29,6 +32,10 @@ def simplediffpair(
     sep=0.5
 ) -> Component:
 
+    wf=width/nf
+    polyExt=0.18
+    routingSpacing=0.4
+
     c = Component("simplediffpair")
 
     nmos0 = c.add_ref(nmos(width=width, length=length, nf=nf))
@@ -36,8 +43,9 @@ def simplediffpair(
     nmos1.dxmin=nmos0.xmax+sep
 
     nmos0S, nmos0D = get_sd_ports_even_odd(nmos0)
+    nmos1S, nmos1D = get_sd_ports_even_odd(nmos1)
 
-    for port in nmos0S:
+    for port in nmos0S+nmos0D+nmos1S+nmos1D:
         populate_via_stack(
             c,
             column_width=port.width,
@@ -46,7 +54,57 @@ def simplediffpair(
             bottom_layer="Metal1",
             top_layer="Metal2"
         )
+
+    connect_ports_to_bus(
+        c,
+        nmos0S+nmos1S,
+        distance=wf/2+polyExt+routingSpacing,
+        layer="Metal2drawing",
+        bus_side="bottom"
+    )
+    connect_ports_to_bus(
+        c,
+        nmos0D,
+        distance=wf/2+polyExt+routingSpacing,
+        layer="Metal2drawing",
+        bus_side="top"
+    )
+    connect_ports_to_bus(
+        c,
+        nmos1D,
+        distance=wf/2+polyExt+routingSpacing,
+        layer="Metal2drawing",
+        bus_side="top"
+    )
+
+    connect_gates_to_bus(
+        c,
+        nmos0,
+        length,
+        "GatPolydrawing"
+    )
+    connect_gates_to_bus(
+        c,
+        nmos1,
+        length,
+        "GatPolydrawing"
+    )
+
+    guard_bbox = (
+        (c.xmin, c.ymin),
+        (c.xmax, c.ymax)
+    )
+    c.add_ref(
+        guard_ring(
+            width=0.32,
+            guardRingSpacing=0.3,
+            guardRingType="psub",
+            bbox=guard_bbox
+        )
+    )
+   
     return c
+
 
 if __name__ == "__main__":
     top = simplediffpair()

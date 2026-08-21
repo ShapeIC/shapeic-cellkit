@@ -5,3 +5,5 @@ pdk
 .venv
 IHP
 .python-version
+**/drc_run_**
+**/*.gds

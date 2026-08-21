@@ -33,8 +33,13 @@ def populate_contact(c, column_width=10.0, row_width=10.0, center=[0, 0]):
     yl = center[1]-column_width/2
     xh = center[0]+row_width/2
     yh = center[1]+column_width/2
-    ox = 0
-    oy = tech.TECH.cont_enc_active
+
+    if column_width>row_width:
+        ox = 0
+        oy = tech.TECH.cont_enc_active
+    else:
+        ox = tech.TECH.cont_enc_active
+        oy = 0
 
     place_contacts(
         c,
@@ -59,3 +64,106 @@ def populate_contact(c, column_width=10.0, row_width=10.0, center=[0, 0]):
         layer="Metal1drawing"
     )
     
+def connect_ports_to_bus(
+    c,
+    ports,
+    distance=0.5,
+    layer="Metal1drawing",
+    bus_side="bottom"
+  ):
+    if layer=="Metal1drawing":
+        polyBusWidth = gf.get_cross_section("metal1_routing").width
+    elif layer=="Metal2drawing":
+        polyBusWidth = gf.get_cross_section("metal2_routing").width
+    else:
+        polyBusWidth = gf.get_cross_section("metal1_routing").width
+
+    xs = [float(port.center[0]) for port in ports]
+    ys = [float(port.center[1]) for port in ports]
+
+    # Bus debajo de los dispositivos
+    if bus_side=="bottom":
+        bus_y = min(ys) - distance
+    elif bus_side=="top":
+        bus_y = min(ys) + distance
+    else:
+        bus_y = min(ys) - distance
+
+    # Línea horizontal
+    c.add_polygon(
+        [
+            (min(xs) - polyBusWidth / 2, bus_y - polyBusWidth / 2),
+            (max(xs) + polyBusWidth / 2, bus_y - polyBusWidth / 2),
+            (max(xs) + polyBusWidth / 2, bus_y + polyBusWidth / 2),
+            (min(xs) - polyBusWidth / 2, bus_y + polyBusWidth / 2),
+        ],
+        layer=layer,
+    )
+
+    # Ramas verticales
+    for port in ports:
+        x, y = map(float, port.center)
+
+        c.add_polygon(
+            [
+                (x - polyBusWidth / 2, bus_y - polyBusWidth / 2),
+                (x + polyBusWidth / 2, bus_y - polyBusWidth / 2),
+                (x + polyBusWidth / 2, y + polyBusWidth / 2),
+                (x - polyBusWidth / 2, y + polyBusWidth / 2),
+            ],
+            layer=layer,
+        )
+
+def connect_gates_to_bus(
+    c,
+    device,
+    length,
+    layer="Metal1drawing",
+    bus_side="bottom"
+  ):
+    
+    polyBusWidth = 0.32
+
+    gates = get_gates(device)
+
+    xs = [float(gate.center[0]) for gate in gates]
+    ys = [float(gate.center[1]) for gate in gates]
+
+    # Bus debajo de los dispositivos
+    if bus_side=="bottom":
+        bus_y = device.ymin - polyBusWidth/2
+    elif bus_side=="top":
+        bus_y = device.ymax + polyBusWidth/2
+    else:
+        bus_y = device.ymin - polyBusWidth/2
+
+    # Línea horizontal
+    c.add_polygon(
+        [
+            (min(xs) - length / 2, bus_y - polyBusWidth / 2),
+            (max(xs) + length / 2, bus_y - polyBusWidth / 2),
+            (max(xs) + length / 2, bus_y + polyBusWidth / 2),
+            (min(xs) - length / 2, bus_y + polyBusWidth / 2),
+        ],
+        layer=layer,
+    )
+
+    populate_contact(
+        c,
+        column_width = polyBusWidth,
+        row_width = max(xs)-min(xs)+length,
+        center = ((min(xs)+max(xs))/2, bus_y)
+    )
+
+
+def get_gates(ref):
+    gates = []
+
+    for p in ref.ports:
+        if p.name=="G":
+            continue
+        if p.name.startswith("G"):
+            idx = int(p.name.replace("G", ""))
+            gates.append(p)
+
+    return gates
