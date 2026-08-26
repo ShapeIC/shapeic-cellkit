@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-import importlib.util
+import importlib.metadata
 import os
 import sys
 import tempfile
@@ -12,6 +12,16 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+
+
+def _has_backend(**versions: str) -> bool:
+    try:
+        return all(
+            importlib.metadata.version(distribution) == version
+            for distribution, version in versions.items()
+        )
+    except importlib.metadata.PackageNotFoundError:
+        return False
 
 from shapeic_cellkit import (  # noqa: E402
     CellKitCatalog,
@@ -145,6 +155,161 @@ class PrimitiveDescriptorTests(unittest.TestCase):
 
 
 class CatalogTests(unittest.TestCase):
+    def test_sky130_catalog_resolves_local_magic_and_primitive_providers(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            pdk_root = Path(directory) / "pdks"
+            rcfile = pdk_root / "sky130A/libs.tech/magic/sky130A.magicrc"
+            rcfile.parent.mkdir(parents=True)
+            rcfile.write_text("", encoding="ascii")
+
+            catalog = CellKitCatalog.open(ROOT, "sky130A", pdk_root)
+
+            self.assertEqual(catalog.technology().name, "sky130A")
+            self.assertEqual(catalog.technology().magic_rcfile, rcfile.resolve())
+            self.assertEqual(
+                catalog.primitive("simplediffpair").provider.LAYOUT_POLICY,
+                "symmetric-native-fingers-with-edge-dummies-v1",
+            )
+            self.assertEqual(
+                catalog.primitive("simplecurrentmirror").provider.LAYOUT_POLICY,
+                "symmetric-native-fingers-with-edge-dummies-v1",
+            )
+
+    def test_sky130_provider_preserves_finger_width_and_native_nf(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            pdk_root = Path(directory) / "pdks"
+            rcfile = pdk_root / "sky130A/libs.tech/magic/sky130A.magicrc"
+            rcfile.parent.mkdir(parents=True)
+            rcfile.write_text("", encoding="ascii")
+            provider = CellKitCatalog.open(
+                ROOT, "sky130A", pdk_root
+            ).primitive("simplediffpair").provider
+            implementation = provider._implementation()
+            captured = {}
+
+            def factory(**parameters):
+                captured.update(parameters)
+                return object()
+
+            implementation._sky130_mos_device(
+                factory, "nmos", 0.4, 1.5, 3
+            )
+
+            self.assertEqual(captured["gate_width"], 1.5)
+            self.assertEqual(captured["gate_length"], 0.4)
+            self.assertEqual(captured["nf"], 3)
+            self.assertTrue(captured["guard_ring"])
+
+    def test_sky130_provider_accepts_minimum_width_after_si_conversion(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            pdk_root = Path(directory) / "pdks"
+            rcfile = pdk_root / "sky130A/libs.tech/magic/sky130A.magicrc"
+            rcfile.parent.mkdir(parents=True)
+            rcfile.write_text("", encoding="ascii")
+            provider = CellKitCatalog.open(
+                ROOT, "sky130A", pdk_root
+            ).primitive("simplediffpair").provider
+            implementation = provider._implementation()
+            captured = {}
+
+            def factory(**parameters):
+                captured.update(parameters)
+                return object()
+
+            implementation._sky130_mos_device(
+                factory,
+                "nmos",
+                0.4e-6 * 1.0e6,
+                0.42e-6 * 1.0e6,
+                1,
+            )
+
+            self.assertEqual(captured["gate_length"], 0.4)
+            self.assertEqual(captured["gate_width"], 0.42)
+
+    def test_sky130_even_finger_bulk_avoids_the_central_diffusion(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            pdk_root = Path(directory) / "pdks"
+            rcfile = pdk_root / "sky130A/libs.tech/magic/sky130A.magicrc"
+            rcfile.parent.mkdir(parents=True)
+            rcfile.write_text("", encoding="ascii")
+            provider = CellKitCatalog.open(
+                ROOT, "sky130A", pdk_root
+            ).primitive("simplediffpair").provider
+            implementation = provider._implementation()
+
+            body = implementation._guard_ring_body_point(0.4, 0.42, 2, 0.275)
+            diffusion = implementation._source_drain_centers(0.4, 2)
+
+            self.assertIn(0.0, diffusion)
+            self.assertLess(body[0], min(diffusion))
+
+    def test_sky130_primitive_validator_checks_declared_topology(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            pdk_root = Path(directory) / "pdks"
+            rcfile = pdk_root / "sky130A/libs.tech/magic/sky130A.magicrc"
+            rcfile.parent.mkdir(parents=True)
+            rcfile.write_text("", encoding="ascii")
+            catalog = CellKitCatalog.open(ROOT, "sky130A", pdk_root)
+            layout = catalog.primitive("simplediffpair")
+            valid = (
+                ".subckt pair DP DN GP GN S B\n"
+                "X1 DP GP S substrate sky130_fd_pr__nfet_01v8 w=1u l=0.4u\n"
+                "X2 DN GN S substrate sky130_fd_pr__nfet_01v8 w=1u l=0.4u\n"
+                "XD S S S substrate sky130_fd_pr__nfet_01v8 w=1u l=0.4u\n"
+                ".ends pair\n"
+            )
+            technology = catalog.technology()
+            technology.validate_primitive_pex(
+                valid,
+                "simplediffpair",
+                layout.polarity,
+                layout.port_order,
+                layout.branches,
+                "pair",
+            )
+            normalized = technology.normalize_mos_device(
+                valid.splitlines()[1].split(), "simplediffpair"
+            )
+            self.assertEqual(normalized[4], "B")
+
+            invalid = valid.replace(
+                "XD S S S substrate", "XD internal wrong S substrate"
+            )
+            with self.assertRaisesRegex(ValueError, "outside the declared"):
+                technology.validate_primitive_pex(
+                    invalid,
+                    "simplediffpair",
+                    layout.polarity,
+                    layout.port_order,
+                    layout.branches,
+                    "pair",
+                )
+
+    def test_sky130_macro_normalization_uses_declared_bulk_bindings(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            pdk_root = Path(directory) / "pdks"
+            rcfile = pdk_root / "sky130A/libs.tech/magic/sky130A.magicrc"
+            rcfile.parent.mkdir(parents=True)
+            rcfile.write_text("", encoding="ascii")
+            technology = CellKitCatalog.open(
+                ROOT, "sky130A", pdk_root
+            ).technology()
+            normalized = technology.normalize_macro_pex(
+                ".subckt test OUT LOW HIGH\n"
+                "X1 OUT OUT 0 sub sky130_fd_pr__nfet_01v8\n"
+                "X2 OUT OUT HIGH well sky130_fd_pr__pfet_01v8\n"
+                ".ends test\n",
+                "test",
+                {"nmos": "LOW", "pmos": "HIGH"},
+            )
+            self.assertIn(
+                "X1 OUT OUT 0 LOW sky130_fd_pr__nfet_01v8", normalized
+            )
+            self.assertIn(
+                "X2 OUT OUT HIGH HIGH sky130_fd_pr__pfet_01v8", normalized
+            )
+
     def test_ihp_primitive_validator_checks_every_declared_bus(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             pdk_root = Path(directory) / "pdks"
@@ -261,8 +426,8 @@ class CatalogTests(unittest.TestCase):
             self.assertFalse(captured["is_pmos"])
 
     @unittest.skipUnless(
-        importlib.util.find_spec("gdsfactory") and importlib.util.find_spec("ihp"),
-        "requires the optional IHP layout backend",
+        _has_backend(gdsfactory="9.44.0", **{"ihp-gdsfactory": "2.0.0"}),
+        "requires the IHP layout backend with its pinned versions",
     )
     def test_ihp_providers_render_the_validated_lut_interfaces(self) -> None:
         with tempfile.TemporaryDirectory() as directory, patch.dict(
@@ -296,6 +461,34 @@ class CatalogTests(unittest.TestCase):
                     self.assertEqual(
                         rendered.layout_policy,
                         "symmetric-adjacent-with-edge-dummies-v3",
+                    )
+
+    @unittest.skipUnless(
+        _has_backend(gdsfactory="9.40.1", sky130="1.0.0"),
+        "requires the SKY130A layout backend with its pinned versions",
+    )
+    def test_sky130_providers_render_the_declared_interfaces(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"MPLCONFIGDIR": directory}
+        ):
+            pdk_root = Path(directory) / "pdks"
+            rcfile = pdk_root / "sky130A/libs.tech/magic/sky130A.magicrc"
+            rcfile.parent.mkdir(parents=True)
+            rcfile.write_text("", encoding="ascii")
+            catalog = CellKitCatalog.open(ROOT, "sky130A", pdk_root)
+
+            for primitive, ports in (
+                ("simplediffpair", ("DP", "DN", "GP", "GN", "S", "B")),
+                ("simplecurrentmirror", ("DOUT", "DREF", "S", "B")),
+            ):
+                with self.subTest(primitive=primitive):
+                    rendered = catalog.primitive(primitive).render(
+                        PrimitiveGeometry(0.4e-6, 0.84e-6, 2)
+                    )
+                    self.assertEqual(rendered.port_order, ports)
+                    self.assertEqual(
+                        rendered.layout_policy,
+                        "symmetric-native-fingers-with-edge-dummies-v1",
                     )
 
     def test_opens_fake_technology_and_renders_fake_primitive(self) -> None:

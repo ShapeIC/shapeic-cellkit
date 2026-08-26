@@ -1,0 +1,7 @@
+[technology]
+name = "sky130A"
+revision = "local-installation"
+
+[magic]
+rcfile = "libs.tech/magic/sky130A.magicrc"
+startup_commands = []
