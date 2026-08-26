@@ -145,6 +145,42 @@ class PrimitiveDescriptorTests(unittest.TestCase):
 
 
 class CatalogTests(unittest.TestCase):
+    def test_ihp_primitive_validator_checks_every_declared_bus(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            pdk_root = Path(directory) / "pdks"
+            rcfile = pdk_root / "ihp-sg13g2/libs.tech/magic/ihp-sg13g2.magicrc"
+            rcfile.parent.mkdir(parents=True)
+            rcfile.write_text("", encoding="ascii")
+            catalog = CellKitCatalog.open(ROOT, "ihp-sg13g2", pdk_root)
+            layout = catalog.primitive("simplediffpair")
+            valid = (
+                ".subckt pair DP DN GP GN S B\n"
+                "X1 DP GP S substrate sg13_lv_nmos\n"
+                "X2 DN GN S substrate sg13_lv_nmos\n"
+                "XD S S S substrate sg13_lv_nmos\n"
+                ".ends pair\n"
+            )
+            catalog.technology().validate_primitive_pex(
+                valid,
+                "simplediffpair",
+                layout.polarity,
+                layout.port_order,
+                layout.branches,
+                "pair",
+            )
+            invalid = valid.replace(
+                "XD S S S substrate", "XD internal wrong S substrate"
+            )
+            with self.assertRaisesRegex(ValueError, "outside the declared"):
+                catalog.technology().validate_primitive_pex(
+                    invalid,
+                    "simplediffpair",
+                    layout.polarity,
+                    layout.port_order,
+                    layout.branches,
+                    "pair",
+                )
+
     def test_ihp_macro_normalization_uses_declared_bulk_bindings(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             pdk_root = Path(directory) / "pdks"
@@ -439,6 +475,8 @@ def _fake_cellkit(
         "        return text\n"
         "    def normalize_mos_device(self, fields, primitive):\n"
         "        return fields\n"
+        "    def validate_primitive_pex(self, text, primitive, polarity, port_order, branches, expected_subcircuit):\n"
+        "        return None\n"
         "def create_technology(pdk_root, metadata):\n"
         "    return Technology(pdk_root)\n",
         encoding="utf-8",

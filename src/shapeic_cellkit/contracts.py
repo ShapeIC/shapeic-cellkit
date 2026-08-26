@@ -121,6 +121,18 @@ class MagicTechnology(Protocol):
         """Normalize one extracted MOS instance for multiport simulation."""
         ...
 
+    def validate_primitive_pex(
+        self,
+        text: str,
+        primitive: str,
+        polarity: MosPolarity,
+        port_order: tuple[str, ...],
+        branches: tuple[PhysicalMosBranch, ...],
+        expected_subcircuit: str,
+    ) -> None:
+        """Validate that extracted devices reach every declared terminal bus."""
+        ...
+
 
 @dataclass(frozen=True)
 class PrimitiveLayout:
