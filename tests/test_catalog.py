@@ -145,6 +145,53 @@ class PrimitiveDescriptorTests(unittest.TestCase):
 
 
 class CatalogTests(unittest.TestCase):
+    def test_ihp_macro_normalization_uses_declared_bulk_bindings(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            pdk_root = Path(directory) / "pdks"
+            rcfile = pdk_root / "ihp-sg13g2/libs.tech/magic/ihp-sg13g2.magicrc"
+            rcfile.parent.mkdir(parents=True)
+            rcfile.write_text("", encoding="ascii")
+            technology = CellKitCatalog.open(
+                ROOT, "ihp-sg13g2", pdk_root
+            ).technology()
+            normalized = technology.normalize_macro_pex(
+                ".subckt test OUT LOW HIGH\n"
+                "X1 OUT OUT 0 sub sg13_lv_nmos\n"
+                "X2 OUT OUT HIGH well sg13_lv_pmos\n"
+                ".ends test\n",
+                "test",
+                {"nmos": "LOW", "pmos": "HIGH"},
+            )
+            self.assertIn("X1 OUT OUT 0 LOW sg13_lv_nmos", normalized)
+            self.assertIn("X2 OUT OUT HIGH HIGH sg13_lv_pmos", normalized)
+
+    def test_ihp_ota_macro_declares_complete_primitive_connectivity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            pdk_root = Path(directory) / "pdks"
+            rcfile = pdk_root / "ihp-sg13g2/libs.tech/magic/ihp-sg13g2.magicrc"
+            rcfile.parent.mkdir(parents=True)
+            rcfile.write_text("", encoding="ascii")
+
+            macro = CellKitCatalog.open(ROOT, "ihp-sg13g2", pdk_root).macro_layout(
+                "ota_4t"
+            )
+
+            self.assertEqual(
+                macro.port_order,
+                ("VOUT", "VINP", "VINN", "IBIAS", "VDD", "VSS"),
+            )
+            self.assertEqual(
+                macro.instances,
+                (("xdp", "simplediffpair"), ("xcm", "simplecurrentmirror")),
+            )
+            by_name = {net.name: net for net in macro.nets}
+            self.assertEqual(
+                by_name["vout"].terminals,
+                (("xdp", "DP"), ("xcm", "DOUT")),
+            )
+            self.assertEqual(by_name["mirror_reference"].external_port, None)
+            self.assertTrue(macro.implementation_digest)
+
     def test_ihp_provider_passes_total_width_to_the_device_core(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             pdk_root = Path(directory) / "pdks"
@@ -302,6 +349,12 @@ class CatalogTests(unittest.TestCase):
                         "name": "ota",
                         "port_order": ["IN", "OUT"],
                         "instances": {"xpair": "pair"},
+                        "nets": {
+                            "input": {"port": "IN", "terminals": ["xpair.D"]},
+                            "output": {"port": "OUT", "terminals": ["xpair.G"]},
+                            "source": {"terminals": ["xpair.S"]},
+                            "bulk": {"terminals": ["xpair.B"]}
+                        },
                     }
                 ),
                 encoding="utf-8",
@@ -323,6 +376,7 @@ class CatalogTests(unittest.TestCase):
             )
 
             self.assertEqual(macro.instances, (("xpair", "pair"),))
+            self.assertEqual(macro.nets[0].terminals, (("xpair", "D"),))
             self.assertEqual(rendered.port_order, ("IN", "OUT"))
             self.assertEqual(rendered.layout_policy, "fake-macro-v1")
 
@@ -380,6 +434,8 @@ def _fake_cellkit(
         "        self.pdk_root = pdk_root\n"
         "        self.magic_rcfile = pdk_root / 'magicrc'\n"
         "    def normalize_pex(self, text, primitive):\n"
+        "        return text\n"
+        "    def normalize_macro_pex(self, text, macro, bulk_ports):\n"
         "        return text\n"
         "    def normalize_mos_device(self, fields, primitive):\n"
         "        return fields\n"

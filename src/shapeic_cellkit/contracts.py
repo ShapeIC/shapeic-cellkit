@@ -81,6 +81,15 @@ class MacroPCellProvider(Protocol):
     def build(self, instances: Mapping[str, PrimitiveGeometry]) -> Any: ...
 
 
+@dataclass(frozen=True)
+class MacroNet:
+    """One logical macro net and the primitive terminals connected to it."""
+
+    name: str
+    external_port: str | None
+    terminals: tuple[tuple[str, str], ...]
+
+
 @runtime_checkable
 class MagicTechnology(Protocol):
     """PDK-specific boundary consumed by the generic Magic backend."""
@@ -95,6 +104,15 @@ class MagicTechnology(Protocol):
 
     def normalize_pex(self, text: str, primitive: str) -> str:
         """Normalize raw Magic output without changing its electrical meaning."""
+        ...
+
+    def normalize_macro_pex(
+        self,
+        text: str,
+        macro: str,
+        bulk_ports: Mapping[str, str],
+    ) -> str:
+        """Normalize a flattened macro PEX to its declared external interface."""
         ...
 
     def normalize_mos_device(
@@ -156,6 +174,7 @@ class MacroLayout:
     name: str
     port_order: tuple[str, ...]
     instances: tuple[tuple[str, str], ...]
+    nets: tuple[MacroNet, ...]
     provider: MacroPCellProvider
     implementation_digest: str
 

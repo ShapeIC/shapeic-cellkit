@@ -46,6 +46,97 @@ def build_currentmirror(geometry):
     return component
 
 
+def build_ota_4t(instances):
+    """Place and route the CellKit primitive instances for the OTA macro."""
+    if set(instances) != {"xdp", "xcm"}:
+        raise ValueError("ota_4t requires exactly xdp and xcm geometries")
+    gf, cells, mos_core, tech = _backend()
+    diff_geometry = instances["xdp"]
+    mirror_geometry = instances["xcm"]
+    diff = _simple_diff_pair(
+        gf,
+        cells,
+        mos_core,
+        tech,
+        diff_geometry.length_m * 1.0e6,
+        diff_geometry.finger_width_m * 1.0e6,
+        diff_geometry.nf,
+    )
+    mirror = _current_mirror(
+        gf,
+        cells,
+        mos_core,
+        tech,
+        mirror_geometry.length_m * 1.0e6,
+        mirror_geometry.finger_width_m * 1.0e6,
+        mirror_geometry.nf,
+    )
+    component = _ota_4t(gf, tech, diff, mirror, diff_geometry, mirror_geometry)
+    _validate_external_port_isolation(
+        component, gf.kdb, ("VOUT", "VINP", "VINN", "IBIAS", "VDD", "VSS")
+    )
+    return component
+
+
+def _ota_4t(gf, tech, diff_cell, mirror_cell, diff_geometry, mirror_geometry):
+    name = (
+        f"ota_4t_ldp{diff_geometry.length_m * 1e6:.3f}"
+        f"_wdp{diff_geometry.finger_width_m * 1e6:.3f}_ndp{diff_geometry.nf}"
+        f"_lcm{mirror_geometry.length_m * 1e6:.3f}"
+        f"_wcm{mirror_geometry.finger_width_m * 1e6:.3f}_ncm{mirror_geometry.nf}"
+    ).replace(".", "p")
+    component = gf.Component(name)
+    diff = component.add_ref(diff_cell)
+    mirror = component.add_ref(mirror_cell)
+    mirror.move(
+        (
+            0.0,
+            float(diff.dbbox().top) - float(mirror.dbbox().bottom) + 4.0,
+        )
+    )
+
+    diff_dp = _point(diff.ports["DP"])
+    diff_dn = _point(diff.ports["DN"])
+    mirror_dout = _point(mirror.ports["DOUT"])
+    mirror_dref = _point(mirror.ports["DREF"])
+    left_x = min(
+        float(diff.dbbox().left),
+        float(mirror.dbbox().left),
+        diff_dp[0],
+        mirror_dout[0],
+    ) - 1.0
+    right_x = max(
+        float(diff.dbbox().right),
+        float(mirror.dbbox().right),
+        diff_dn[0],
+        mirror_dref[0],
+    ) + 1.0
+    vout = (left_x, (diff_dp[1] + mirror_dout[1]) / 2.0)
+    internal = (right_x, (diff_dn[1] + mirror_dref[1]) / 2.0)
+    for terminal in (diff_dp, diff_dn, mirror_dout, mirror_dref, vout):
+        _add_metal1_metal2_via(component, tech, terminal)
+    for terminal in (diff_dp, mirror_dout):
+        _wire(component, terminal, vout, layer="Metal2drawing")
+    for terminal in (diff_dn, mirror_dref):
+        _wire(component, terminal, internal, layer="Metal2drawing")
+
+    mirror_source = _point(mirror.ports["S"])
+    mirror_bulk = _point(mirror.ports["B"])
+    _wire(component, mirror_source, mirror_bulk)
+    _add_external_ports(
+        component,
+        {
+            "VOUT": vout,
+            "VINP": _point(diff.ports["GP"]),
+            "VINN": _point(diff.ports["GN"]),
+            "IBIAS": _point(diff.ports["S"]),
+            "VDD": mirror_bulk,
+            "VSS": _point(diff.ports["B"]),
+        },
+    )
+    return component
+
+
 def _backend():
     try:
         import gdsfactory as gf
@@ -340,6 +431,25 @@ def _rectangle(component, layer, left, bottom, right, top):
     component.add_polygon(
         [(left, bottom), (right, bottom), (right, top), (left, top)], layer=layer
     )
+
+
+def _add_metal1_metal2_via(component, tech, center):
+    x, y = center
+    via_size = float(tech.via1_size)
+    pad_size = via_size + 2.0 * float(tech.via1_enc_metal)
+    for layer, size in (
+        ("Metal1drawing", pad_size),
+        ("Metal2drawing", pad_size),
+        ("Via1drawing", via_size),
+    ):
+        _rectangle(
+            component,
+            layer,
+            x - size / 2.0,
+            y - size / 2.0,
+            x + size / 2.0,
+            y + size / 2.0,
+        )
 
 
 def _wire(component, start, stop, *, layer="Metal1drawing"):

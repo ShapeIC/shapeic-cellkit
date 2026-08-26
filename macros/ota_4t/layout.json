@@ -1,0 +1,37 @@
+{
+  "name": "ota_4t",
+  "port_order": ["VOUT", "VINP", "VINN", "IBIAS", "VDD", "VSS"],
+  "instances": {
+    "xdp": "simplediffpair",
+    "xcm": "simplecurrentmirror"
+  },
+  "nets": {
+    "vout": {
+      "port": "VOUT",
+      "terminals": ["xdp.DP", "xcm.DOUT"]
+    },
+    "mirror_reference": {
+      "terminals": ["xdp.DN", "xcm.DREF"]
+    },
+    "vinp": {
+      "port": "VINP",
+      "terminals": ["xdp.GP"]
+    },
+    "vinn": {
+      "port": "VINN",
+      "terminals": ["xdp.GN"]
+    },
+    "ibias": {
+      "port": "IBIAS",
+      "terminals": ["xdp.S"]
+    },
+    "vdd": {
+      "port": "VDD",
+      "terminals": ["xcm.S", "xcm.B"]
+    },
+    "vss": {
+      "port": "VSS",
+      "terminals": ["xdp.B"]
+    }
+  }
+}

@@ -19,6 +19,47 @@ class IhpSg13g2Technology:
         del primitive
         return text
 
+    def normalize_macro_pex(
+        self, text: str, macro: str, bulk_ports: dict[str, str]
+    ) -> str:
+        del macro
+        expected = {"nmos", "pmos"}
+        if set(bulk_ports) != expected:
+            raise ValueError(
+                f"IHP macro bulk bindings must define {sorted(expected)}, "
+                f"found {sorted(bulk_ports)}"
+            )
+        replacements: dict[str, str] = {}
+        for line in _logical_lines(text):
+            fields = line.split()
+            if not fields or not fields[0].casefold().startswith("x") or len(fields) < 6:
+                continue
+            supply = {
+                "sg13_lv_nmos": bulk_ports["nmos"],
+                "sg13_lv_pmos": bulk_ports["pmos"],
+            }.get(fields[5].casefold())
+            if supply is None:
+                continue
+            bulk = fields[4].casefold()
+            previous = replacements.get(bulk)
+            if previous is not None and previous != supply:
+                raise ValueError(
+                    f"extracted bulk node '{fields[4]}' is shared by both polarities"
+                )
+            replacements[bulk] = supply
+        if not replacements:
+            raise ValueError("extracted macro contains no recognized IHP MOS bulk nodes")
+        output = []
+        for raw in text.splitlines():
+            fields = raw.split()
+            if not fields or raw.lstrip().startswith("*"):
+                output.append(raw)
+            else:
+                output.append(
+                    " ".join(replacements.get(field.casefold(), field) for field in fields)
+                )
+        return "\n".join(output) + "\n"
+
     def normalize_mos_device(
         self, fields: list[str], primitive: str
     ) -> list[str]:
@@ -75,3 +116,16 @@ def _installed_path(pdk_root: Path, relative: str) -> Path:
     if not resolved.is_relative_to(installed):
         raise ValueError("technology path escapes PDK_ROOT/PDK")
     return resolved
+
+
+def _logical_lines(text: str) -> list[str]:
+    logical: list[str] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("*"):
+            continue
+        if line.startswith("+") and logical:
+            logical[-1] += " " + line[1:].strip()
+        else:
+            logical.append(line)
+    return logical

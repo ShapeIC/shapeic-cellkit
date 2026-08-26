@@ -3,6 +3,7 @@
 from .catalog import CellKitCatalog
 from .contracts import (
     MacroLayout,
+    MacroNet,
     MagicTechnology,
     MosPolarity,
     PhysicalMosBranch,
@@ -31,6 +32,7 @@ __all__ = [
     "InvalidCellKitRootError",
     "InvalidPdkNameError",
     "MacroLayout",
+    "MacroNet",
     "MacroLayoutNotFoundError",
     "MagicTechnology",
     "ManifestValidationError",

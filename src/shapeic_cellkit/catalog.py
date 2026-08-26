@@ -11,7 +11,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
-from .contracts import MagicTechnology, MacroLayout, PrimitiveLayout
+from .contracts import MacroNet, MagicTechnology, MacroLayout, PrimitiveLayout
 from .errors import (
     InvalidCellKitRootError,
     InvalidPdkNameError,
@@ -224,6 +224,7 @@ class CellKitCatalog:
                 f"macro layout '{manifest_path}' requires non-empty object 'instances'"
             )
         instances = []
+        instance_ports: dict[str, set[str]] = {}
         for instance, primitive in raw_instances.items():
             if not isinstance(instance, str) or not instance or not isinstance(primitive, str) or not primitive:
                 raise ManifestValidationError(
@@ -234,13 +235,25 @@ class CellKitCatalog:
                     f"macro layout '{manifest_path}' references unknown primitive '{primitive}'"
                 )
             instances.append((instance, primitive))
+            instance_ports[instance] = set(
+                self.primitive_descriptor(primitive).port_order
+            )
+        nets = _macro_nets(
+            raw.get("nets"),
+            manifest_path,
+            port_order,
+            instance_ports,
+        )
         provider = _load_provider(provider_path, f"macro_{name}_{self._pdk}")
         return MacroLayout(
             name=name,
             port_order=port_order,
             instances=tuple(instances),
+            nets=nets,
             provider=provider,
-            implementation_digest=_sha256(provider_path),
+            implementation_digest=_provider_digest(
+                provider_path, provider, self._root
+            ),
         )
 
     @staticmethod
@@ -259,6 +272,91 @@ class CellKitCatalog:
                 raise ManifestValidationError(f"duplicate catalog entry '{name}'")
             output[name] = path
         return output
+
+
+def _macro_nets(
+    raw: object,
+    path: Path,
+    ports: tuple[str, ...],
+    instance_ports: dict[str, set[str]],
+) -> tuple[MacroNet, ...]:
+    if not isinstance(raw, dict) or not raw:
+        raise ManifestValidationError(
+            f"macro layout '{path}' requires non-empty object 'nets'"
+        )
+    seen_ports: set[str] = set()
+    seen_terminals: set[tuple[str, str]] = set()
+    nets: list[MacroNet] = []
+    for net_name, value in raw.items():
+        if not isinstance(net_name, str) or not net_name:
+            raise ManifestValidationError(
+                f"macro layout '{path}' net names must be non-empty strings"
+            )
+        if not isinstance(value, dict):
+            raise ManifestValidationError(
+                f"macro layout '{path}' net '{net_name}' must be an object"
+            )
+        external = value.get("port")
+        if external is not None:
+            if not isinstance(external, str) or external not in ports:
+                raise ManifestValidationError(
+                    f"macro layout '{path}' net '{net_name}' references unknown "
+                    f"external port '{external}'"
+                )
+            if external in seen_ports:
+                raise ManifestValidationError(
+                    f"macro layout '{path}' external port '{external}' is connected "
+                    "to more than one net"
+                )
+            seen_ports.add(external)
+        raw_terminals = value.get("terminals")
+        if not isinstance(raw_terminals, list) or not raw_terminals:
+            raise ManifestValidationError(
+                f"macro layout '{path}' net '{net_name}' requires terminals"
+            )
+        terminals: list[tuple[str, str]] = []
+        for endpoint in raw_terminals:
+            if not isinstance(endpoint, str) or endpoint.count(".") != 1:
+                raise ManifestValidationError(
+                    f"macro layout '{path}' endpoint '{endpoint}' must be INSTANCE.PORT"
+                )
+            instance, terminal = endpoint.split(".")
+            if instance not in instance_ports:
+                raise ManifestValidationError(
+                    f"macro layout '{path}' endpoint '{endpoint}' references unknown "
+                    "instance"
+                )
+            if terminal not in instance_ports[instance]:
+                raise ManifestValidationError(
+                    f"macro layout '{path}' endpoint '{endpoint}' references unknown "
+                    "primitive terminal"
+                )
+            key = (instance, terminal)
+            if key in seen_terminals:
+                raise ManifestValidationError(
+                    f"macro layout '{path}' endpoint '{endpoint}' is connected more "
+                    "than once"
+                )
+            seen_terminals.add(key)
+            terminals.append(key)
+        nets.append(MacroNet(net_name, external, tuple(terminals)))
+    missing_ports = sorted(set(ports) - seen_ports)
+    missing_terminals = sorted(
+        f"{instance}.{terminal}"
+        for instance, available in instance_ports.items()
+        for terminal in available
+        if (instance, terminal) not in seen_terminals
+    )
+    if missing_ports or missing_terminals:
+        details = []
+        if missing_ports:
+            details.append("unconnected ports: " + ", ".join(missing_ports))
+        if missing_terminals:
+            details.append("unconnected terminals: " + ", ".join(missing_terminals))
+        raise ManifestValidationError(
+            f"macro layout '{path}' is incomplete ({'; '.join(details)})"
+        )
+    return tuple(nets)
 
 
 def _validate_pdk_name(name: str) -> None:
