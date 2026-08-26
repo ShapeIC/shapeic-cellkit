@@ -1,0 +1,416 @@
+"""Validated IHP primitive PCells used by physical LUT generation."""
+
+from __future__ import annotations
+
+import math
+
+IHP_GDSFACTORY_VERSION = "2.0.0"
+IHP_TAP_SIZE_UM = 0.78
+IHP_ROUTE_WIDTH_UM = 0.3
+IHP_GATE_POLY_OVERLAP_UM = 0.02
+IHP_BUS_CLEARANCE_UM = 0.2
+LAYOUT_POLICY = "symmetric-adjacent-with-edge-dummies-v3"
+
+
+def build_simplediffpair(geometry):
+    gf, cells, mos_core, tech = _backend()
+    component = _simple_diff_pair(
+        gf,
+        cells,
+        mos_core,
+        tech,
+        geometry.length_m * 1.0e6,
+        geometry.finger_width_m * 1.0e6,
+        geometry.nf,
+    )
+    _validate_external_port_isolation(
+        component, gf.kdb, ("DP", "DN", "GP", "GN", "S", "B")
+    )
+    return component
+
+
+def build_currentmirror(geometry):
+    gf, cells, mos_core, tech = _backend()
+    component = _current_mirror(
+        gf,
+        cells,
+        mos_core,
+        tech,
+        geometry.length_m * 1.0e6,
+        geometry.finger_width_m * 1.0e6,
+        geometry.nf,
+    )
+    _validate_external_port_isolation(
+        component, gf.kdb, ("DOUT", "DREF", "S", "B")
+    )
+    return component
+
+
+def _backend():
+    try:
+        import gdsfactory as gf
+        import ihp
+        from ihp import PDK, cells
+        from ihp.cells.fet_transistors import TECH, _mos_core
+    except ImportError as error:
+        raise RuntimeError(
+            "the IHP PCells require gdsfactory and ihp-gdsfactory"
+        ) from error
+    if ihp.__version__ != IHP_GDSFACTORY_VERSION:
+        raise RuntimeError(
+            "the IHP PCells require "
+            f"ihp-gdsfactory=={IHP_GDSFACTORY_VERSION}, found {ihp.__version__}"
+        )
+    PDK.activate()
+    return gf, cells, _mos_core, TECH
+
+
+def _simple_diff_pair(gf, cells, mos_core, tech, length, wf, nf):
+    component = gf.Component(_cell_name("simplediffpair", length, wf, nf))
+    device = _bussed_mos_device(gf, mos_core, tech, "nmos", length, wf, nf)
+    pitch = float(device.dbbox().right) - float(device.dbbox().left) + 1.2
+    left = component.add_ref(device)
+    right = component.add_ref(device)
+    left.move((-pitch / 2, 0))
+    right.move((pitch / 2, 0))
+    dummy_left = component.add_ref(device)
+    dummy_right = component.add_ref(device)
+    dummy_left.move((-3.0 * pitch / 2, 0))
+    dummy_right.move((3.0 * pitch / 2, 0))
+
+    devices = (left, right, dummy_left, dummy_right)
+    source_y = min(float(ref.dbbox().bottom) for ref in devices) - 1.0
+    source = (0.0, source_y)
+    for ref in devices:
+        _wire(component, _point(ref.ports["S"]), source)
+    for ref in (dummy_left, dummy_right):
+        _wire(component, _point(ref.ports["D"]), source)
+        _wire(component, _point(ref.ports["G"]), source)
+
+    bulk_ref = component.add_ref(
+        cells.ptap1(width=IHP_TAP_SIZE_UM, length=IHP_TAP_SIZE_UM)
+    )
+    bulk_ref.move((0.0, source_y - 1.5))
+    _add_external_ports(
+        component,
+        {
+            "DP": _point(left.ports["D"]),
+            "DN": _point(right.ports["D"]),
+            "GP": _point(left.ports["G"]),
+            "GN": _point(right.ports["G"]),
+            "S": source,
+            "B": _point(bulk_ref.ports["TAP"]),
+        },
+    )
+    return component
+
+
+def _current_mirror(gf, cells, mos_core, tech, length, wf, nf):
+    component = gf.Component(_cell_name("currentmirror", length, wf, nf))
+    device = _bussed_mos_device(gf, mos_core, tech, "pmos", length, wf, nf)
+    pitch = float(device.dbbox().right) - float(device.dbbox().left) + 1.2
+    output = component.add_ref(device)
+    reference = component.add_ref(device)
+    output.move((-pitch / 2, 0))
+    reference.move((pitch / 2, 0))
+    dummy_left = component.add_ref(device)
+    dummy_right = component.add_ref(device)
+    dummy_left.move((-3.0 * pitch / 2, 0))
+    dummy_right.move((3.0 * pitch / 2, 0))
+
+    devices = (output, reference, dummy_left, dummy_right)
+    source_y = max(float(ref.dbbox().top) for ref in devices) + 1.0
+    source = (0.0, source_y)
+    for ref in devices:
+        _wire(component, _point(ref.ports["S"]), source)
+    for ref in (dummy_left, dummy_right):
+        _wire(component, _point(ref.ports["D"]), source)
+        _wire(component, _point(ref.ports["G"]), source)
+
+    reference_drain = _point(reference.ports["D"])
+    gate_bus = (0.0, min(float(ref.dbbox().bottom) for ref in devices) - 1.0)
+    for terminal in (
+        _point(output.ports["G"]),
+        _point(reference.ports["G"]),
+        reference_drain,
+    ):
+        _wire(component, terminal, gate_bus)
+    bulk_ref = component.add_ref(
+        cells.ntap1(width=IHP_TAP_SIZE_UM, length=IHP_TAP_SIZE_UM)
+    )
+    bulk_ref.move((0.0, source_y + 1.5))
+    bulk = _point(bulk_ref.ports["TAP"])
+    component.add_polygon(
+        [
+            (-2.0 * pitch, -wf / 2 - 1.0),
+            (2.0 * pitch, -wf / 2 - 1.0),
+            (2.0 * pitch, bulk[1] + 1.0),
+            (-2.0 * pitch, bulk[1] + 1.0),
+        ],
+        layer="NWelldrawing",
+    )
+    _add_external_ports(
+        component,
+        {
+            "DOUT": _point(output.ports["D"]),
+            "DREF": reference_drain,
+            "S": source,
+            "B": bulk,
+        },
+    )
+    return component
+
+
+def _ihp_mos_device(mos_core, tech, kind, length, wf, nf):
+    if kind not in {"nmos", "pmos"}:
+        raise ValueError(f"unsupported MOS kind '{kind}'")
+    if not math.isfinite(length) or not math.isfinite(wf):
+        raise ValueError("MOS length and finger width must be finite")
+    minimum_length = getattr(tech, f"{kind}_min_length")
+    maximum_length = getattr(tech, f"{kind}_max_length")
+    minimum_width = getattr(tech, f"{kind}_min_width")
+    maximum_width = getattr(tech, f"{kind}_max_width")
+    maximum_nf = getattr(tech, f"{kind}_max_nf")
+    if not minimum_length <= length <= maximum_length:
+        raise ValueError(
+            f"{kind} length={length} out of range "
+            f"[{minimum_length}, {maximum_length}]"
+        )
+    if not minimum_width <= wf <= maximum_width:
+        raise ValueError(
+            f"{kind} finger width={wf} out of range "
+            f"[{minimum_width}, {maximum_width}]"
+        )
+    if isinstance(nf, bool) or not isinstance(nf, int) or not 1 <= nf <= maximum_nf:
+        raise ValueError(f"{kind} nf={nf} out of range [1, {maximum_nf}]")
+    return mos_core(
+        width=wf * nf,
+        length=length,
+        nf=nf,
+        is_pmos=kind == "pmos",
+        is_hv=False,
+    )
+
+
+def _bussed_mos_device(gf, mos_core, tech, kind, length, wf, nf):
+    raw = _ihp_mos_device(mos_core, tech, kind, length, wf, nf)
+    component = gf.Component(_cell_name(f"{kind}_bussed", length, wf, nf))
+    component.add_ref(raw)
+    metal_columns = _layer_boxes(raw, "Metal1drawing")
+    gate_fingers = _layer_boxes(raw, "GatPolydrawing")
+    if len(metal_columns) != nf + 1:
+        raise ValueError(
+            f"{kind} nf={nf} exposes {len(metal_columns)} Metal1 columns; "
+            f"expected {nf + 1}"
+        )
+    if len(gate_fingers) != nf:
+        raise ValueError(
+            f"{kind} nf={nf} exposes {len(gate_fingers)} gate fingers; expected {nf}"
+        )
+
+    source_columns = metal_columns[0::2]
+    drain_columns = metal_columns[1::2]
+    contact_cut_size = float(tech.cont_size)
+    contact_pad_size = contact_cut_size + 2.0 * float(tech.gat_d)
+    gate_bottom = min(box[1] for box in gate_fingers)
+    gate_top = max(box[3] for box in gate_fingers)
+    gate_bus_y = gate_bottom + IHP_GATE_POLY_OVERLAP_UM - contact_pad_size / 2.0
+    contact_x = min(
+        float(raw.dbbox().left)
+        - float(tech.cont_gate_dist)
+        - contact_pad_size / 2.0,
+        source_columns[0][0] - contact_pad_size / 2.0 - IHP_BUS_CLEARANCE_UM,
+    )
+    _rectangle(
+        component,
+        "GatPolydrawing",
+        contact_x - contact_pad_size / 2.0,
+        gate_bus_y - contact_pad_size / 2.0,
+        max(box[2] for box in gate_fingers),
+        gate_bus_y + contact_pad_size / 2.0,
+    )
+    _rectangle(
+        component,
+        "Metal1drawing",
+        contact_x - contact_pad_size / 2.0,
+        gate_bus_y - contact_pad_size / 2.0,
+        contact_x + contact_pad_size / 2.0,
+        gate_bus_y + contact_pad_size / 2.0,
+    )
+    _rectangle(
+        component,
+        "Contdrawing",
+        contact_x - contact_cut_size / 2.0,
+        gate_bus_y - contact_cut_size / 2.0,
+        contact_x + contact_cut_size / 2.0,
+        gate_bus_y + contact_cut_size / 2.0,
+    )
+    source_bus_y = (
+        gate_bus_y
+        - contact_pad_size / 2.0
+        - IHP_ROUTE_WIDTH_UM / 2.0
+        - IHP_BUS_CLEARANCE_UM
+    )
+    drain_bus_y = gate_top + IHP_ROUTE_WIDTH_UM / 2.0 + IHP_BUS_CLEARANCE_UM
+    if kind == "nmos":
+        source = _add_terminal_bus(
+            component, source_columns, source_bus_y, connect_from_top=False
+        )
+        drain = _add_terminal_bus(
+            component, drain_columns, drain_bus_y, connect_from_top=True
+        )
+    else:
+        source = _add_terminal_bus(
+            component, source_columns, drain_bus_y, connect_from_top=True
+        )
+        drain = _add_terminal_bus(
+            component, drain_columns, source_bus_y, connect_from_top=False
+        )
+    component.add_port(
+        name="S",
+        center=source,
+        width=IHP_ROUTE_WIDTH_UM,
+        orientation=270,
+        layer="Metal1pin",
+        port_type="electrical",
+    )
+    component.add_port(
+        name="D",
+        center=drain,
+        width=IHP_ROUTE_WIDTH_UM,
+        orientation=90,
+        layer="Metal1pin",
+        port_type="electrical",
+    )
+    component.add_port(
+        name="G",
+        center=(contact_x, gate_bus_y),
+        width=contact_pad_size,
+        orientation=180,
+        layer="Metal1pin",
+        port_type="electrical",
+    )
+    return component
+
+
+def _add_terminal_bus(component, columns, bus_y, *, connect_from_top):
+    centers = [(box[0] + box[2]) / 2.0 for box in columns]
+    for left, bottom, right, top in columns:
+        edge = top if connect_from_top else bottom
+        _rectangle(
+            component,
+            "Metal1drawing",
+            left,
+            min(edge, bus_y - IHP_ROUTE_WIDTH_UM / 2.0),
+            right,
+            max(edge, bus_y + IHP_ROUTE_WIDTH_UM / 2.0),
+        )
+    _rectangle(
+        component,
+        "Metal1drawing",
+        min(centers) - IHP_ROUTE_WIDTH_UM / 2.0,
+        bus_y - IHP_ROUTE_WIDTH_UM / 2.0,
+        max(centers) + IHP_ROUTE_WIDTH_UM / 2.0,
+        bus_y + IHP_ROUTE_WIDTH_UM / 2.0,
+    )
+    return (min(centers) + max(centers)) / 2.0, bus_y
+
+
+def _layer_boxes(component, layer):
+    dbu = float(component.kcl.dbu)
+    boxes = []
+    for polygon in component.get_polygons(merge=False, by="name").get(layer, []):
+        box = polygon.bbox()
+        boxes.append(
+            (
+                float(box.left) * dbu,
+                float(box.bottom) * dbu,
+                float(box.right) * dbu,
+                float(box.top) * dbu,
+            )
+        )
+    return sorted(boxes, key=lambda box: (box[0], box[1], box[2], box[3]))
+
+
+def _rectangle(component, layer, left, bottom, right, top):
+    if right <= left or top <= bottom:
+        raise ValueError(
+            f"invalid {layer} rectangle ({left}, {bottom})..({right}, {top})"
+        )
+    component.add_polygon(
+        [(left, bottom), (right, bottom), (right, top), (left, top)], layer=layer
+    )
+
+
+def _wire(component, start, stop, *, layer="Metal1drawing"):
+    width = IHP_ROUTE_WIDTH_UM
+    x1, y1 = start
+    x2, y2 = stop
+    if abs(y2 - y1) > 1.0e-12:
+        _rectangle(
+            component,
+            layer,
+            x1 - width / 2.0,
+            min(y1, y2) - width / 2.0,
+            x1 + width / 2.0,
+            max(y1, y2) + width / 2.0,
+        )
+    if abs(x2 - x1) > 1.0e-12:
+        _rectangle(
+            component,
+            layer,
+            min(x1, x2) - width / 2.0,
+            y2 - width / 2.0,
+            max(x1, x2) + width / 2.0,
+            y2 + width / 2.0,
+        )
+
+
+def _add_external_ports(component, ports):
+    for name, center in ports.items():
+        component.add_port(
+            name=name,
+            center=center,
+            width=IHP_ROUTE_WIDTH_UM,
+            orientation=0,
+            layer="Metal1pin",
+            port_type="electrical",
+        )
+        component.add_label(text=name, position=center, layer="Metal1pin")
+
+
+def _validate_external_port_isolation(component, kdb, port_names):
+    polygons = component.get_polygons(merge=True, by="name").get(
+        "Metal1drawing", []
+    )
+    if not polygons:
+        raise ValueError("PCell has no Metal1 geometry")
+    owners = {}
+    for name in port_names:
+        center = _point(component.ports[name])
+        point = kdb.Point(
+            round(center[0] / component.kcl.dbu),
+            round(center[1] / component.kcl.dbu),
+        )
+        matches = [
+            index for index, polygon in enumerate(polygons) if polygon.inside(point)
+        ]
+        if len(matches) != 1:
+            raise ValueError(
+                f"external port {name} touches {len(matches)} Metal1 components"
+            )
+        component_index = matches[0]
+        if component_index in owners:
+            raise ValueError(
+                f"external ports {owners[component_index]} and {name} are shorted "
+                "on Metal1"
+            )
+        owners[component_index] = name
+
+
+def _point(port):
+    return float(port.center[0]), float(port.center[1])
+
+
+def _cell_name(primitive, length, wf, nf):
+    return f"{primitive}_l{length:.3f}_wf{wf:.3f}_nf{nf}".replace(".", "p")

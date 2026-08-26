@@ -1,0 +1,7 @@
+[technology]
+name = "ihp-sg13g2"
+revision = "local-installation"
+
+[magic]
+rcfile = "libs.tech/magic/ihp-sg13g2.magicrc"
+startup_commands = []
