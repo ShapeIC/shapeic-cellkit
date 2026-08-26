@@ -16,10 +16,18 @@ class IhpSg13g2Technology:
     magic_startup_commands: tuple[str, ...]
 
     def normalize_pex(self, text: str, primitive: str) -> str:
-        # The current IHP RC parser already accepts Magic's native output. Device
-        # normalization for delta-C remains in the legacy adapter until Step 4.
         del primitive
         return text
+
+    def normalize_mos_device(
+        self, fields: list[str], primitive: str
+    ) -> list[str]:
+        del primitive
+        if len(fields) < 6:
+            raise ValueError("an extracted IHP MOS instance requires at least six fields")
+        normalized = fields.copy()
+        normalized[4] = "B"
+        return normalized
 
 
 def create_technology(

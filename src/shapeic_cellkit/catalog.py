@@ -36,11 +36,13 @@ class CellKitCatalog:
         pdk: str,
         pdk_root: Path,
         technology: MagicTechnology,
+        technology_digest: str,
     ):
         self._root = root
         self._pdk = pdk
         self._pdk_root = pdk_root
         self._technology = technology
+        self._technology_digest = technology_digest
         self._primitive_paths = self._index_manifests(root / "primitives", "primitive.json")
         self._macro_paths = self._index_manifests(root / "macros", "layout.json")
 
@@ -115,7 +117,13 @@ class CellKitCatalog:
             raise TechnologyLoadError(
                 f"could not load technology provider '{adapter_path}': {cause}"
             ) from error
-        return cls(root_path, pdk, installed, technology)
+        return cls(
+            root_path,
+            pdk,
+            installed,
+            technology,
+            _files_digest((metadata_path, adapter_path), root_path),
+        )
 
     @property
     def root(self) -> Path:
@@ -133,6 +141,10 @@ class CellKitCatalog:
 
     def technology(self) -> MagicTechnology:
         return self._technology
+
+    @property
+    def technology_digest(self) -> str:
+        return self._technology_digest
 
     def primitive_names(self) -> tuple[str, ...]:
         return tuple(sorted(self._primitive_paths))
@@ -329,6 +341,17 @@ def _provider_digest(path: Path, provider: ModuleType, root: Path) -> str:
         digest.update(relative.as_posix().encode("utf-8"))
         digest.update(b"\0")
         digest.update(implementation.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _files_digest(files: tuple[Path, ...], root: Path) -> str:
+    digest = hashlib.sha256()
+    for path in files:
+        relative = path.resolve().relative_to(root.resolve())
+        digest.update(relative.as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
         digest.update(b"\0")
     return digest.hexdigest()
 

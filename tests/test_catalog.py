@@ -227,6 +227,7 @@ class CatalogTests(unittest.TestCase):
             self.assertEqual(
                 catalog.technology().normalize_pex("raw pex", "pair"), "raw pex"
             )
+            self.assertEqual(len(catalog.technology_digest), 64)
             self.assertEqual(
                 catalog.primitive_descriptor_for_lut("pair-lut").catalog_name,
                 "pair",
@@ -380,6 +381,8 @@ def _fake_cellkit(
         "        self.magic_rcfile = pdk_root / 'magicrc'\n"
         "    def normalize_pex(self, text, primitive):\n"
         "        return text\n"
+        "    def normalize_mos_device(self, fields, primitive):\n"
+        "        return fields\n"
         "def create_technology(pdk_root, metadata):\n"
         "    return Technology(pdk_root)\n",
         encoding="utf-8",

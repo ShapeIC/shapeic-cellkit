@@ -97,6 +97,12 @@ class MagicTechnology(Protocol):
         """Normalize raw Magic output without changing its electrical meaning."""
         ...
 
+    def normalize_mos_device(
+        self, fields: list[str], primitive: str
+    ) -> list[str]:
+        """Normalize one extracted MOS instance for multiport simulation."""
+        ...
+
 
 @dataclass(frozen=True)
 class PrimitiveLayout:
