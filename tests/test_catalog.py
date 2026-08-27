@@ -310,6 +310,30 @@ class CatalogTests(unittest.TestCase):
                 "X2 OUT OUT HIGH HIGH sky130_fd_pr__pfet_01v8", normalized
             )
 
+    def test_sky130_ota_macro_resolves_the_shared_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            pdk_root = Path(directory) / "pdks"
+            rcfile = pdk_root / "sky130A/libs.tech/magic/sky130A.magicrc"
+            rcfile.parent.mkdir(parents=True)
+            rcfile.write_text("", encoding="ascii")
+
+            macro = CellKitCatalog.open(ROOT, "sky130A", pdk_root).macro_layout(
+                "ota_4t"
+            )
+
+            self.assertEqual(
+                macro.port_order,
+                ("VOUT", "VINP", "VINN", "IBIAS", "VDD", "VSS"),
+            )
+            self.assertEqual(
+                macro.instances,
+                (("xdp", "simplediffpair"), ("xcm", "simplecurrentmirror")),
+            )
+            self.assertEqual(
+                macro.provider.LAYOUT_POLICY,
+                "symmetric-native-fingers-with-edge-dummies-v1",
+            )
+
     def test_ihp_primitive_validator_checks_every_declared_bus(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             pdk_root = Path(directory) / "pdks"
@@ -490,6 +514,37 @@ class CatalogTests(unittest.TestCase):
                         rendered.layout_policy,
                         "symmetric-native-fingers-with-edge-dummies-v1",
                     )
+
+    @unittest.skipUnless(
+        _has_backend(gdsfactory="9.40.1", sky130="1.0.0"),
+        "requires the SKY130A layout backend with its pinned versions",
+    )
+    def test_sky130_ota_macro_renders_only_its_six_external_ports(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"MPLCONFIGDIR": directory}
+        ):
+            pdk_root = Path(directory) / "pdks"
+            rcfile = pdk_root / "sky130A/libs.tech/magic/sky130A.magicrc"
+            rcfile.parent.mkdir(parents=True)
+            rcfile.write_text("", encoding="ascii")
+            catalog = CellKitCatalog.open(ROOT, "sky130A", pdk_root)
+
+            rendered = catalog.macro_layout("ota_4t").render(
+                {
+                    "xdp": PrimitiveGeometry(0.4e-6, 0.84e-6, 2),
+                    "xcm": PrimitiveGeometry(0.4e-6, 0.84e-6, 1),
+                }
+            )
+
+            self.assertEqual(
+                rendered.port_order,
+                ("VOUT", "VINP", "VINN", "IBIAS", "VDD", "VSS"),
+            )
+            self.assertTrue(rendered.cell_name.startswith("ota_4t"))
+            self.assertEqual(
+                {port.name for port in rendered.component.ports},
+                set(rendered.port_order),
+            )
 
     def test_opens_fake_technology_and_renders_fake_primitive(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -39,6 +39,40 @@ def build_currentmirror(geometry):
     return _current_mirror(gf, layer, device, geometry)
 
 
+def build_ota_4t(instances):
+    """Place and route the CellKit primitive instances for the OTA macro."""
+    if set(instances) != {"xdp", "xcm"}:
+        raise ValueError("ota_4t requires exactly xdp and xcm geometries")
+    gf, layer, nfet, pfet = _backend()
+    diff_geometry = instances["xdp"]
+    mirror_geometry = instances["xcm"]
+    diff_device = _bussed_mos(
+        gf,
+        layer,
+        nfet,
+        "nmos",
+        diff_geometry.length_m * 1.0e6,
+        diff_geometry.finger_width_m * 1.0e6,
+        diff_geometry.nf,
+    )
+    mirror_device = _bussed_mos(
+        gf,
+        layer,
+        pfet,
+        "pmos",
+        mirror_geometry.length_m * 1.0e6,
+        mirror_geometry.finger_width_m * 1.0e6,
+        mirror_geometry.nf,
+    )
+    diff = _simple_diff_pair(
+        gf, layer, diff_device, diff_geometry, label_ports=False
+    )
+    mirror = _current_mirror(
+        gf, layer, mirror_device, mirror_geometry, label_ports=False
+    )
+    return _ota_4t(gf, layer, diff, mirror, diff_geometry, mirror_geometry)
+
+
 def _backend():
     try:
         import gdsfactory as gf
@@ -89,7 +123,7 @@ def _sky130_mos_device(factory, kind, length, wf, nf):
 
 def _bussed_mos(gf, layer, factory, kind, length, wf, nf):
     raw = _sky130_mos_device(factory, kind, length, wf, nf)
-    component = gf.Component(_cell_name(f"{kind}_bussed", length, wf, nf))
+    component = _component(gf, _cell_name(f"{kind}_bussed", length, wf, nf))
     component.add_ref(raw)
 
     gate_to_contact = 0.275 if kind == "nmos" else 0.320
@@ -151,14 +185,15 @@ def _bussed_mos(gf, layer, factory, kind, length, wf, nf):
     return component
 
 
-def _simple_diff_pair(gf, layer, device, geometry):
-    component = gf.Component(
+def _simple_diff_pair(gf, layer, device, geometry, *, label_ports=True):
+    component = _component(
+        gf,
         _cell_name(
             "simplediffpair",
             geometry.length_m * 1e6,
             geometry.finger_width_m * 1e6,
             geometry.nf,
-        )
+        ),
     )
     refs = _place_four(component, device)
     left, right, dummy_left, dummy_right = refs
@@ -180,23 +215,24 @@ def _simple_diff_pair(gf, layer, device, geometry):
         _wire(component, layer.met4drawing, terminal, (terminal[0], bulk_y))
     _wire_across(component, layer.met4drawing, refs, "B", bulk_y)
 
-    _copy_port(component, layer, "DP", left.ports["D"], 3)
-    _copy_port(component, layer, "DN", right.ports["D"], 3)
-    _copy_port(component, layer, "GP", left.ports["G"], 1)
-    _copy_port(component, layer, "GN", right.ports["G"], 1)
-    _add_port(component, layer, "S", source, 2)
-    _add_port(component, layer, "B", bulk, 4)
+    _copy_port(component, layer, "DP", left.ports["D"], 3, label=label_ports)
+    _copy_port(component, layer, "DN", right.ports["D"], 3, label=label_ports)
+    _copy_port(component, layer, "GP", left.ports["G"], 1, label=label_ports)
+    _copy_port(component, layer, "GN", right.ports["G"], 1, label=label_ports)
+    _add_port(component, layer, "S", source, 2, label=label_ports)
+    _add_port(component, layer, "B", bulk, 4, label=label_ports)
     return component
 
 
-def _current_mirror(gf, layer, device, geometry):
-    component = gf.Component(
+def _current_mirror(gf, layer, device, geometry, *, label_ports=True):
+    component = _component(
+        gf,
         _cell_name(
             "currentmirror",
             geometry.length_m * 1e6,
             geometry.finger_width_m * 1e6,
             geometry.nf,
-        )
+        ),
     )
     refs = _place_four(component, device)
     output, reference, dummy_left, dummy_right = refs
@@ -242,10 +278,64 @@ def _current_mirror(gf, layer, device, geometry):
         _wire(component, layer.met4drawing, terminal, (terminal[0], bulk_y))
     _wire_across(component, layer.met4drawing, refs, "B", bulk_y)
 
-    _copy_port(component, layer, "DOUT", output.ports["D"], 3)
-    _copy_port(component, layer, "DREF", reference.ports["D"], 3)
-    _add_port(component, layer, "S", source, 2)
-    _add_port(component, layer, "B", bulk, 4)
+    _copy_port(component, layer, "DOUT", output.ports["D"], 3, label=label_ports)
+    _copy_port(component, layer, "DREF", reference.ports["D"], 3, label=label_ports)
+    _add_port(component, layer, "S", source, 2, label=label_ports)
+    _add_port(component, layer, "B", bulk, 4, label=label_ports)
+    return component
+
+
+def _ota_4t(gf, layer, diff_cell, mirror_cell, diff_geometry, mirror_geometry):
+    name = (
+        f"ota_4t_ldp{diff_geometry.length_m * 1e6:.3f}"
+        f"_wdp{diff_geometry.finger_width_m * 1e6:.3f}_ndp{diff_geometry.nf}"
+        f"_lcm{mirror_geometry.length_m * 1e6:.3f}"
+        f"_wcm{mirror_geometry.finger_width_m * 1e6:.3f}_ncm{mirror_geometry.nf}"
+    ).replace(".", "p")
+    component = _component(gf, name)
+    diff = component.add_ref(diff_cell)
+    mirror = component.add_ref(mirror_cell)
+    mirror.move(
+        (
+            0.0,
+            float(diff.dbbox().top) - float(mirror.dbbox().bottom) + 3.0,
+        )
+    )
+
+    diff_dp = _point(diff.ports["DP"])
+    diff_dn = _point(diff.ports["DN"])
+    mirror_dout = _point(mirror.ports["DOUT"])
+    mirror_dref = _point(mirror.ports["DREF"])
+    left_x = min(
+        float(diff.dbbox().left),
+        float(mirror.dbbox().left),
+        diff_dp[0],
+        mirror_dout[0],
+    ) - 0.8
+    right_x = max(
+        float(diff.dbbox().right),
+        float(mirror.dbbox().right),
+        diff_dn[0],
+        mirror_dref[0],
+    ) + 0.8
+    vout = (left_x, (diff_dp[1] + mirror_dout[1]) / 2.0)
+    mirror_reference = (right_x, (diff_dn[1] + mirror_dref[1]) / 2.0)
+    for terminal in (diff_dp, mirror_dout):
+        _wire(component, layer.met3drawing, terminal, vout)
+    for terminal in (diff_dn, mirror_dref):
+        _wire(component, layer.met3drawing, terminal, mirror_reference)
+
+    mirror_source = _point(mirror.ports["S"])
+    mirror_bulk = _point(mirror.ports["B"])
+    _add_stack(component, layer, mirror_source, 2, 4)
+    _wire(component, layer.met4drawing, mirror_source, mirror_bulk)
+
+    _add_port(component, layer, "VOUT", vout, 3)
+    _copy_port(component, layer, "VINP", diff.ports["GP"], 1)
+    _copy_port(component, layer, "VINN", diff.ports["GN"], 1)
+    _copy_port(component, layer, "IBIAS", diff.ports["S"], 2)
+    _copy_port(component, layer, "VDD", mirror.ports["B"], 4)
+    _copy_port(component, layer, "VSS", diff.ports["B"], 4)
     return component
 
 
@@ -379,7 +469,7 @@ def _rectangle(component, layer, left, bottom, right, top):
     )
 
 
-def _add_port(component, layer, name, center, metal):
+def _add_port(component, layer, name, center, metal, *, label=True):
     pin_layer = getattr(layer, f"met{metal}pin")
     component.add_port(
         name=name,
@@ -389,12 +479,13 @@ def _add_port(component, layer, name, center, metal):
         layer=pin_layer,
         port_type="electrical",
     )
-    # SKY130 Magic only promotes labels on the PIN datatype to subcircuit ports.
-    component.add_label(text=name, position=center, layer=pin_layer)
+    if label:
+        # SKY130 Magic only promotes labels on the PIN datatype to subcircuit ports.
+        component.add_label(text=name, position=center, layer=pin_layer)
 
 
-def _copy_port(component, layer, name, port, metal):
-    _add_port(component, layer, name, _point(port), metal)
+def _copy_port(component, layer, name, port, metal, *, label=True):
+    _add_port(component, layer, name, _point(port), metal, label=label)
 
 
 def _mean_x(points):
@@ -407,6 +498,10 @@ def _point(port):
 
 def _snap(value):
     return round(value / 0.005) * 0.005
+
+
+def _component(gf, name):
+    return gf.Component(kdb_cell=gf.kcl.create_cell(name, allow_duplicate=True))
 
 
 def _cell_name(primitive, length, wf, nf):
