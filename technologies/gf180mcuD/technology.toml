@@ -1,0 +1,7 @@
+[technology]
+name = "gf180mcuD"
+revision = "local-installation"
+
+[magic]
+rcfile = "libs.tech/magic/gf180mcuD.magicrc"
+startup_commands = []

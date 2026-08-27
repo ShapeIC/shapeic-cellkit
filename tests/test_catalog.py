@@ -155,6 +155,139 @@ class PrimitiveDescriptorTests(unittest.TestCase):
 
 
 class CatalogTests(unittest.TestCase):
+    def test_gf180_catalog_resolves_local_magic_and_primitive_providers(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            pdk_root = Path(directory) / "pdks"
+            rcfile = pdk_root / "gf180mcuD/libs.tech/magic/gf180mcuD.magicrc"
+            rcfile.parent.mkdir(parents=True)
+            rcfile.write_text("", encoding="ascii")
+
+            catalog = CellKitCatalog.open(ROOT, "gf180mcuD", pdk_root)
+
+            self.assertEqual(catalog.technology().name, "gf180mcuD")
+            self.assertEqual(catalog.technology().magic_rcfile, rcfile.resolve())
+            self.assertEqual(
+                catalog.primitive("simplediffpair").provider.LAYOUT_POLICY,
+                "symmetric-native-fingers-with-edge-dummies-v2",
+            )
+            self.assertEqual(
+                catalog.primitive("simplecurrentmirror").provider.LAYOUT_POLICY,
+                "symmetric-native-fingers-with-edge-dummies-v2",
+            )
+
+    def test_gf180_provider_preserves_finger_width_and_native_nf(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            pdk_root = Path(directory) / "pdks"
+            rcfile = pdk_root / "gf180mcuD/libs.tech/magic/gf180mcuD.magicrc"
+            rcfile.parent.mkdir(parents=True)
+            rcfile.write_text("", encoding="ascii")
+            provider = CellKitCatalog.open(
+                ROOT, "gf180mcuD", pdk_root
+            ).primitive("simplediffpair").provider
+            implementation = provider._implementation()
+            captured = {}
+
+            def factory(**parameters):
+                captured.update(parameters)
+                return object()
+
+            implementation._gf180_mos_device(factory, "nmos", 0.4, 1.5, 3)
+
+            self.assertEqual(captured["l_gate"], 0.4)
+            self.assertEqual(captured["w_gate"], 1.5)
+            self.assertEqual(captured["nf"], 3)
+            self.assertEqual(captured["volt"], "3.3V")
+
+    def test_gf180_provider_accepts_minimum_width_after_si_conversion(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            pdk_root = Path(directory) / "pdks"
+            rcfile = pdk_root / "gf180mcuD/libs.tech/magic/gf180mcuD.magicrc"
+            rcfile.parent.mkdir(parents=True)
+            rcfile.write_text("", encoding="ascii")
+            provider = CellKitCatalog.open(
+                ROOT, "gf180mcuD", pdk_root
+            ).primitive("simplediffpair").provider
+            implementation = provider._implementation()
+            captured = {}
+
+            def factory(**parameters):
+                captured.update(parameters)
+                return object()
+
+            implementation._gf180_mos_device(
+                factory,
+                "nmos",
+                0.4e-6 * 1.0e6,
+                0.22e-6 * 1.0e6,
+                1,
+            )
+
+            self.assertEqual(captured["l_gate"], 0.4)
+            self.assertEqual(captured["w_gate"], 0.22)
+
+    def test_gf180_gate_bus_clears_the_guard_ring_at_minimum_width(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            pdk_root = Path(directory) / "pdks"
+            rcfile = pdk_root / "gf180mcuD/libs.tech/magic/gf180mcuD.magicrc"
+            rcfile.parent.mkdir(parents=True)
+            rcfile.write_text("", encoding="ascii")
+            provider = CellKitCatalog.open(
+                ROOT, "gf180mcuD", pdk_root
+            ).primitive("simplediffpair").provider
+            implementation = provider._implementation()
+
+            _gate_to_diffusion, gate_to_poly, pitch = (
+                implementation._mos_dimensions(0.4, 0.22)
+            )
+            body = implementation._guard_ring_body_point(0.4, 0.22, 1, pitch)
+            gate_y = -(0.22 / 2.0 + gate_to_poly)
+            gate_bottom = gate_y - implementation.ROUTE_WIDTH_UM / 2.0
+            guard_ring_top = -body[1] + 0.23 / 2.0
+
+            self.assertGreater(gate_bottom, guard_ring_top)
+
+    def test_gf180_primitive_validator_checks_declared_topology(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            pdk_root = Path(directory) / "pdks"
+            rcfile = pdk_root / "gf180mcuD/libs.tech/magic/gf180mcuD.magicrc"
+            rcfile.parent.mkdir(parents=True)
+            rcfile.write_text("", encoding="ascii")
+            catalog = CellKitCatalog.open(ROOT, "gf180mcuD", pdk_root)
+            layout = catalog.primitive("simplediffpair")
+            valid = (
+                ".subckt pair DP DN GP GN S B\n"
+                "X1 DP GP S substrate nfet_03v3 w=1u l=0.4u\n"
+                "X2 DN GN S substrate nfet_03v3 w=1u l=0.4u\n"
+                "XD S S S substrate nfet_03v3 w=1u l=0.4u\n"
+                ".ends pair\n"
+            )
+            technology = catalog.technology()
+            technology.validate_primitive_pex(
+                valid,
+                "simplediffpair",
+                layout.polarity,
+                layout.port_order,
+                layout.branches,
+                "pair",
+            )
+            normalized = technology.normalize_mos_device(
+                valid.splitlines()[1].split(), "simplediffpair"
+            )
+            self.assertEqual(normalized[4], "B")
+
+            invalid = valid.replace(
+                "XD S S S substrate", "XD internal wrong S substrate"
+            )
+            with self.assertRaisesRegex(ValueError, "outside the declared"):
+                technology.validate_primitive_pex(
+                    invalid,
+                    "simplediffpair",
+                    layout.polarity,
+                    layout.port_order,
+                    layout.branches,
+                    "pair",
+                )
+
     def test_sky130_catalog_resolves_local_magic_and_primitive_providers(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             pdk_root = Path(directory) / "pdks"
@@ -514,6 +647,79 @@ class CatalogTests(unittest.TestCase):
                         rendered.layout_policy,
                         "symmetric-native-fingers-with-edge-dummies-v1",
                     )
+
+    @unittest.skipUnless(
+        _has_backend(gdsfactory="9.40.1", gf180mcu="1.0.0"),
+        "requires the GF180MCU layout backend with its pinned versions",
+    )
+    def test_gf180_providers_render_the_declared_interfaces(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"MPLCONFIGDIR": directory}
+        ):
+            pdk_root = Path(directory) / "pdks"
+            rcfile = pdk_root / "gf180mcuD/libs.tech/magic/gf180mcuD.magicrc"
+            rcfile.parent.mkdir(parents=True)
+            rcfile.write_text("", encoding="ascii")
+            catalog = CellKitCatalog.open(ROOT, "gf180mcuD", pdk_root)
+
+            for primitive, ports in (
+                ("simplediffpair", ("DP", "DN", "GP", "GN", "S", "B")),
+                ("simplecurrentmirror", ("DOUT", "DREF", "S", "B")),
+            ):
+                with self.subTest(primitive=primitive):
+                    rendered = catalog.primitive(primitive).render(
+                        PrimitiveGeometry(0.4e-6, 0.22e-6, 2)
+                    )
+                    self.assertEqual(rendered.port_order, ports)
+                    self.assertEqual(
+                        rendered.layout_policy,
+                        "symmetric-native-fingers-with-edge-dummies-v2",
+                    )
+                    if primitive == "simplediffpair":
+                        physical_ports = {
+                            port.name: port for port in rendered.component.ports
+                        }
+                        self.assertNotEqual(
+                            physical_ports["GP"].layer,
+                            physical_ports["S"].layer,
+                        )
+                        self.assertEqual(
+                            physical_ports["GP"].layer,
+                            physical_ports["GN"].layer,
+                        )
+                    if primitive == "simplecurrentmirror":
+                        import gdsfactory as gf
+                        import kfactory as kf
+                        from gf180mcu.layers import LAYER
+
+                        component = rendered.component
+                        layer_number, datatype = gf.get_layer_tuple(LAYER.metal3)
+                        layer_index = component.kcl.layer(layer_number, datatype)
+                        regions = kf.kdb.Region(
+                            component.kdb_cell.begin_shapes_rec(layer_index)
+                        )
+                        regions.merge()
+                        physical_ports = {
+                            port.name: port for port in component.ports
+                        }
+                        dbu = component.kcl.dbu
+
+                        def containing_region(name):
+                            center = physical_ports[name].center
+                            point = kf.kdb.Point(
+                                round(float(center[0]) / dbu),
+                                round(float(center[1]) / dbu),
+                            )
+                            return next(
+                                index
+                                for index, polygon in enumerate(regions.each())
+                                if polygon.inside(point)
+                            )
+
+                        self.assertNotEqual(
+                            containing_region("DOUT"),
+                            containing_region("DREF"),
+                        )
 
     @unittest.skipUnless(
         _has_backend(gdsfactory="9.40.1", sky130="1.0.0"),
