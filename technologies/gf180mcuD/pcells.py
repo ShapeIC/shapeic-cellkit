@@ -40,6 +40,40 @@ def build_currentmirror(geometry):
     return _current_mirror(gf, layer, device, geometry)
 
 
+def build_ota_4t(instances):
+    """Place and route the CellKit primitive instances for the OTA macro."""
+    if set(instances) != {"xdp", "xcm"}:
+        raise ValueError("ota_4t requires exactly xdp and xcm geometries")
+    gf, layer, nfet, pfet = _backend()
+    diff_geometry = instances["xdp"]
+    mirror_geometry = instances["xcm"]
+    diff_device = _bussed_mos(
+        gf,
+        layer,
+        nfet,
+        "nmos",
+        diff_geometry.length_m * 1.0e6,
+        diff_geometry.finger_width_m * 1.0e6,
+        diff_geometry.nf,
+    )
+    mirror_device = _bussed_mos(
+        gf,
+        layer,
+        pfet,
+        "pmos",
+        mirror_geometry.length_m * 1.0e6,
+        mirror_geometry.finger_width_m * 1.0e6,
+        mirror_geometry.nf,
+    )
+    diff = _simple_diff_pair(
+        gf, layer, diff_device, diff_geometry, label_ports=False
+    )
+    mirror = _current_mirror(
+        gf, layer, mirror_device, mirror_geometry, label_ports=False
+    )
+    return _ota_4t(gf, layer, diff, mirror, diff_geometry, mirror_geometry)
+
+
 def _backend():
     try:
         import gdsfactory as gf
@@ -147,7 +181,7 @@ def _bussed_mos(gf, layer, factory, kind, length, wf, nf):
     return component
 
 
-def _simple_diff_pair(gf, layer, device, geometry):
+def _simple_diff_pair(gf, layer, device, geometry, *, label_ports=True):
     component = _component(
         gf,
         _cell_name(
@@ -175,16 +209,16 @@ def _simple_diff_pair(gf, layer, device, geometry):
         _wire(component, layer.metal4, terminal, (terminal[0], bulk_y))
     _wire_across(component, layer.metal4, refs, "B", bulk_y)
 
-    _copy_port(component, layer, "DP", left.ports["D"], 3)
-    _copy_port(component, layer, "DN", right.ports["D"], 3)
-    _copy_port(component, layer, "GP", left.ports["G"], 3)
-    _copy_port(component, layer, "GN", right.ports["G"], 3)
-    _add_port(component, layer, "S", source, 2)
-    _add_port(component, layer, "B", bulk, 4)
+    _copy_port(component, layer, "DP", left.ports["D"], 3, label=label_ports)
+    _copy_port(component, layer, "DN", right.ports["D"], 3, label=label_ports)
+    _copy_port(component, layer, "GP", left.ports["G"], 3, label=label_ports)
+    _copy_port(component, layer, "GN", right.ports["G"], 3, label=label_ports)
+    _add_port(component, layer, "S", source, 2, label=label_ports)
+    _add_port(component, layer, "B", bulk, 4, label=label_ports)
     return component
 
 
-def _current_mirror(gf, layer, device, geometry):
+def _current_mirror(gf, layer, device, geometry, *, label_ports=True):
     component = _component(
         gf,
         _cell_name(
@@ -228,10 +262,66 @@ def _current_mirror(gf, layer, device, geometry):
         _wire(component, layer.metal4, terminal, (terminal[0], bulk_y))
     _wire_across(component, layer.metal4, refs, "B", bulk_y)
 
-    _copy_port(component, layer, "DOUT", output.ports["D"], 3)
-    _copy_port(component, layer, "DREF", reference.ports["D"], 3)
-    _add_port(component, layer, "S", source, 2)
-    _add_port(component, layer, "B", bulk, 4)
+    _copy_port(
+        component, layer, "DOUT", output.ports["D"], 3, label=label_ports
+    )
+    _copy_port(
+        component, layer, "DREF", reference.ports["D"], 3, label=label_ports
+    )
+    _add_port(component, layer, "S", source, 2, label=label_ports)
+    _add_port(component, layer, "B", bulk, 4, label=label_ports)
+    return component
+
+
+def _ota_4t(gf, layer, diff_cell, mirror_cell, diff_geometry, mirror_geometry):
+    name = (
+        f"ota_4t_ldp{diff_geometry.length_m * 1e6:.3f}"
+        f"_wdp{diff_geometry.finger_width_m * 1e6:.3f}_ndp{diff_geometry.nf}"
+        f"_lcm{mirror_geometry.length_m * 1e6:.3f}"
+        f"_wcm{mirror_geometry.finger_width_m * 1e6:.3f}_ncm{mirror_geometry.nf}"
+    ).replace(".", "p")
+    component = _component(gf, name)
+    diff = component.add_ref(diff_cell)
+    mirror = component.add_ref(mirror_cell)
+    mirror.move(
+        (
+            0.0,
+            float(diff.dbbox().top) - float(mirror.dbbox().bottom) + 3.0,
+        )
+    )
+
+    diff_dp = _point(diff.ports["DP"])
+    diff_dn = _point(diff.ports["DN"])
+    mirror_dout = _point(mirror.ports["DOUT"])
+    mirror_dref = _point(mirror.ports["DREF"])
+    left_x = min(float(diff.dbbox().left), float(mirror.dbbox().left)) - 0.9
+    right_x = max(float(diff.dbbox().right), float(mirror.dbbox().right)) + 0.9
+    vout = (left_x, (diff_dp[1] + mirror_dout[1]) / 2.0)
+    mirror_reference = (right_x, (diff_dn[1] + mirror_dref[1]) / 2.0)
+    diff_lane_y = float(diff.dbbox().bottom) - 0.7
+    mirror_lane_y = float(mirror.dbbox().bottom) - 0.7
+    _route_to_side(component, layer.metal3, diff_dp, vout, diff_lane_y)
+    _route_to_side(component, layer.metal3, mirror_dout, vout, mirror_lane_y)
+    _route_to_side(
+        component, layer.metal3, diff_dn, mirror_reference, diff_lane_y
+    )
+    _route_to_side(
+        component, layer.metal3, mirror_dref, mirror_reference, mirror_lane_y
+    )
+
+    mirror_source = _point(mirror.ports["S"])
+    mirror_bulk = _point(mirror.ports["B"])
+    supply = (right_x + 1.2, mirror_source[1])
+    _wire(component, layer.metal2, mirror_source, supply)
+    _add_stack(component, layer, supply, 2, 4)
+    _wire(component, layer.metal4, supply, mirror_bulk)
+
+    _add_port(component, layer, "VOUT", vout, 3)
+    _copy_port(component, layer, "VINP", diff.ports["GP"], 3)
+    _copy_port(component, layer, "VINN", diff.ports["GN"], 3)
+    _copy_port(component, layer, "IBIAS", diff.ports["S"], 2)
+    _add_port(component, layer, "VDD", supply, 4)
+    _copy_port(component, layer, "VSS", diff.ports["B"], 4)
     return component
 
 
@@ -298,6 +388,14 @@ def _wire_terminal_span(component, routing_layer, refs, ports, y):
     _wire(component, routing_layer, (min(xs), y), (max(xs), y))
 
 
+def _route_to_side(component, routing_layer, terminal, side, lane_y):
+    terminal_lane = (terminal[0], lane_y)
+    side_lane = (side[0], lane_y)
+    _wire(component, routing_layer, terminal, terminal_lane)
+    _wire(component, routing_layer, terminal_lane, side_lane)
+    _wire(component, routing_layer, side_lane, side)
+
+
 def _add_stack(component, layer, center, first, last):
     metals = {
         1: layer.metal1,
@@ -356,7 +454,7 @@ def _rectangle(component, layer, left, bottom, right, top):
     )
 
 
-def _add_port(component, layer, name, center, metal):
+def _add_port(component, layer, name, center, metal, *, label=True):
     drawing_layer = getattr(layer, f"metal{metal}")
     label_layer = getattr(layer, f"metal{metal}_label")
     component.add_port(
@@ -367,11 +465,12 @@ def _add_port(component, layer, name, center, metal):
         layer=drawing_layer,
         port_type="electrical",
     )
-    component.add_label(text=name, position=center, layer=label_layer)
+    if label:
+        component.add_label(text=name, position=center, layer=label_layer)
 
 
-def _copy_port(component, layer, name, port, metal):
-    _add_port(component, layer, name, _point(port), metal)
+def _copy_port(component, layer, name, port, metal, *, label=True):
+    _add_port(component, layer, name, _point(port), metal, label=label)
 
 
 def _mean_x(points):

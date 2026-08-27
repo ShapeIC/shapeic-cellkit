@@ -23,6 +23,78 @@ def _has_backend(**versions: str) -> bool:
     except importlib.metadata.PackageNotFoundError:
         return False
 
+
+def _physical_port_components(component, layer_enum, metal_names, via_names):
+    import gdsfactory as gf
+    import kfactory as kf
+
+    polygons = []
+    layer_tuples = []
+    for name in metal_names:
+        layer_tuple = gf.get_layer_tuple(getattr(layer_enum, name))
+        layer_tuples.append(layer_tuple)
+        layer_index = component.kcl.layer(*layer_tuple)
+        region = kf.kdb.Region(
+            component.kdb_cell.begin_shapes_rec(layer_index)
+        )
+        region.merge()
+        polygons.append(list(region.each()))
+
+    keys = [
+        (layer, index)
+        for layer, values in enumerate(polygons)
+        for index in range(len(values))
+    ]
+    parents = {key: key for key in keys}
+
+    def find(key):
+        while parents[key] != key:
+            parents[key] = parents[parents[key]]
+            key = parents[key]
+        return key
+
+    def union(first, second):
+        first = find(first)
+        second = find(second)
+        if first != second:
+            parents[second] = first
+
+    for lower, name in enumerate(via_names):
+        layer_index = component.kcl.layer(
+            *gf.get_layer_tuple(getattr(layer_enum, name))
+        )
+        vias = kf.kdb.Region(component.kdb_cell.begin_shapes_rec(layer_index))
+        for via in vias.each():
+            via_region = kf.kdb.Region(via)
+            lower_regions = [
+                index
+                for index, polygon in enumerate(polygons[lower])
+                if not (via_region & kf.kdb.Region(polygon)).is_empty()
+            ]
+            upper_regions = [
+                index
+                for index, polygon in enumerate(polygons[lower + 1])
+                if not (via_region & kf.kdb.Region(polygon)).is_empty()
+            ]
+            for first in lower_regions:
+                for second in upper_regions:
+                    union((lower, first), (lower + 1, second))
+
+    output = {}
+    for port in component.ports:
+        layer = layer_tuples.index(gf.get_layer_tuple(port.layer))
+        point = kf.kdb.Point(
+            round(float(port.center[0]) / component.kcl.dbu),
+            round(float(port.center[1]) / component.kcl.dbu),
+        )
+        index = next(
+            index
+            for index, polygon in enumerate(polygons[layer])
+            if polygon.inside(point)
+        )
+        output[port.name] = find((layer, index))
+    return output
+
 from shapeic_cellkit import (  # noqa: E402
     CellKitCatalog,
     InvalidPdkNameError,
@@ -287,6 +359,52 @@ class CatalogTests(unittest.TestCase):
                     layout.branches,
                     "pair",
                 )
+
+    def test_gf180_ota_macro_resolves_the_shared_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            pdk_root = Path(directory) / "pdks"
+            rcfile = pdk_root / "gf180mcuD/libs.tech/magic/gf180mcuD.magicrc"
+            rcfile.parent.mkdir(parents=True)
+            rcfile.write_text("", encoding="ascii")
+
+            macro = CellKitCatalog.open(ROOT, "gf180mcuD", pdk_root).macro_layout(
+                "ota_4t"
+            )
+
+            self.assertEqual(
+                macro.port_order,
+                ("VOUT", "VINP", "VINN", "IBIAS", "VDD", "VSS"),
+            )
+            self.assertEqual(
+                macro.instances,
+                (("xdp", "simplediffpair"), ("xcm", "simplecurrentmirror")),
+            )
+            self.assertEqual(
+                macro.provider.LAYOUT_POLICY,
+                "symmetric-native-fingers-with-edge-dummies-v2",
+            )
+
+    def test_gf180_macro_normalization_uses_declared_bulk_bindings(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            pdk_root = Path(directory) / "pdks"
+            rcfile = pdk_root / "gf180mcuD/libs.tech/magic/gf180mcuD.magicrc"
+            rcfile.parent.mkdir(parents=True)
+            rcfile.write_text("", encoding="ascii")
+            technology = CellKitCatalog.open(
+                ROOT, "gf180mcuD", pdk_root
+            ).technology()
+
+            normalized = technology.normalize_macro_pex(
+                ".subckt test OUT LOW HIGH\n"
+                "X1 OUT OUT LOW substrate nfet_03v3\n"
+                "X2 OUT OUT HIGH well pfet_03v3\n"
+                ".ends test\n",
+                "test",
+                {"nmos": "LOW", "pmos": "HIGH"},
+            )
+
+            self.assertIn("X1 OUT OUT LOW LOW nfet_03v3", normalized)
+            self.assertIn("X2 OUT OUT HIGH HIGH pfet_03v3", normalized)
 
     def test_sky130_catalog_resolves_local_magic_and_primitive_providers(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -720,6 +838,46 @@ class CatalogTests(unittest.TestCase):
                             containing_region("DOUT"),
                             containing_region("DREF"),
                         )
+
+    @unittest.skipUnless(
+        _has_backend(gdsfactory="9.40.1", gf180mcu="1.0.0"),
+        "requires the GF180MCU layout backend with its pinned versions",
+    )
+    def test_gf180_ota_macro_renders_only_its_six_external_ports(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"MPLCONFIGDIR": directory}
+        ):
+            pdk_root = Path(directory) / "pdks"
+            rcfile = pdk_root / "gf180mcuD/libs.tech/magic/gf180mcuD.magicrc"
+            rcfile.parent.mkdir(parents=True)
+            rcfile.write_text("", encoding="ascii")
+            catalog = CellKitCatalog.open(ROOT, "gf180mcuD", pdk_root)
+
+            rendered = catalog.macro_layout("ota_4t").render(
+                {
+                    "xdp": PrimitiveGeometry(0.4e-6, 0.22e-6, 2),
+                    "xcm": PrimitiveGeometry(0.4e-6, 0.22e-6, 1),
+                }
+            )
+
+            self.assertEqual(
+                rendered.port_order,
+                ("VOUT", "VINP", "VINN", "IBIAS", "VDD", "VSS"),
+            )
+            self.assertTrue(rendered.cell_name.startswith("ota_4t"))
+            self.assertEqual(
+                {port.name for port in rendered.component.ports},
+                set(rendered.port_order),
+            )
+            from gf180mcu.layers import LAYER
+
+            components = _physical_port_components(
+                rendered.component,
+                LAYER,
+                ("metal1", "metal2", "metal3", "metal4"),
+                ("via1", "via2", "via3"),
+            )
+            self.assertEqual(len(set(components.values())), len(components))
 
     @unittest.skipUnless(
         _has_backend(gdsfactory="9.40.1", sky130="1.0.0"),
