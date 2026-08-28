@@ -240,11 +240,11 @@ class CatalogTests(unittest.TestCase):
             self.assertEqual(catalog.technology().magic_rcfile, rcfile.resolve())
             self.assertEqual(
                 catalog.primitive("simplediffpair").provider.LAYOUT_POLICY,
-                "symmetric-native-fingers-with-edge-dummies-v2",
+                "symmetric-native-fingers-with-edge-dummies-v3",
             )
             self.assertEqual(
                 catalog.primitive("simplecurrentmirror").provider.LAYOUT_POLICY,
-                "symmetric-native-fingers-with-edge-dummies-v2",
+                "symmetric-native-fingers-with-edge-dummies-v3",
             )
 
     def test_gf180_provider_preserves_finger_width_and_native_nf(self) -> None:
@@ -381,7 +381,7 @@ class CatalogTests(unittest.TestCase):
             )
             self.assertEqual(
                 macro.provider.LAYOUT_POLICY,
-                "symmetric-native-fingers-with-edge-dummies-v2",
+                "symmetric-native-fingers-with-edge-dummies-v3",
             )
 
     def test_gf180_macro_normalization_uses_declared_bulk_bindings(self) -> None:
@@ -791,7 +791,7 @@ class CatalogTests(unittest.TestCase):
                     self.assertEqual(rendered.port_order, ports)
                     self.assertEqual(
                         rendered.layout_policy,
-                        "symmetric-native-fingers-with-edge-dummies-v2",
+                        "symmetric-native-fingers-with-edge-dummies-v3",
                     )
                     if primitive == "simplediffpair":
                         physical_ports = {
@@ -838,6 +838,25 @@ class CatalogTests(unittest.TestCase):
                             containing_region("DOUT"),
                             containing_region("DREF"),
                         )
+
+            implementation = (
+                catalog.primitive("simplediffpair").provider._implementation()
+            )
+            gf, layer, nfet, _pfet = implementation._backend()
+            device = implementation._bussed_mos(
+                gf, layer, nfet, "nmos", 0.4, 0.22, 3
+            )
+            components = _physical_port_components(
+                device,
+                layer,
+                ("metal1", "metal2", "metal3", "metal4"),
+                ("via1", "via2", "via3"),
+            )
+            self.assertEqual(
+                len({components[name] for name in ("D", "G", "S", "B")}),
+                4,
+                "the nf=3 bussed MOS must keep D, G, S, and B disconnected",
+            )
 
     @unittest.skipUnless(
         _has_backend(gdsfactory="9.40.1", gf180mcu="1.0.0"),

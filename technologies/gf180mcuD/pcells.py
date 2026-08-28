@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 
 GF180MCU_PACKAGE_VERSION = "1.0.0"
-LAYOUT_POLICY = "symmetric-native-fingers-with-edge-dummies-v2"
+LAYOUT_POLICY = "symmetric-native-fingers-with-edge-dummies-v3"
 
 ROUTE_WIDTH_UM = 0.30
 BUS_CLEARANCE_UM = 0.55
@@ -130,7 +130,12 @@ def _bussed_mos(gf, layer, factory, kind, length, wf, nf):
     ]
     gate_y = -(wf / 2.0 + gate_to_poly)
     gate_points = [(x, gate_y) for x in gate_x]
-    gate_bus_y = gate_y
+    top = float(raw.dbbox().top)
+    bottom = float(raw.dbbox().bottom)
+    # Keep the Metal3 gate bus above every source/drain contact.  With three
+    # or more fingers, a bus at the lower poly-contact level intersects the
+    # vertical Metal3 route of an internal drain and shorts D to G in Magic.
+    gate_bus_y = top + BUS_CLEARANCE_UM
     for point in gate_points:
         _add_stack(component, layer, point, 1, 3)
         _wire(component, layer.metal3, point, (point[0], gate_bus_y))
@@ -146,8 +151,6 @@ def _bussed_mos(gf, layer, factory, kind, length, wf, nf):
     sd_x = [_snap(left + index * pitch) for index in range(nf + 1)]
     drain_points = [(x, 0.0) for index, x in enumerate(sd_x) if index % 2 == 0]
     source_points = [(x, 0.0) for index, x in enumerate(sd_x) if index % 2 == 1]
-    top = float(raw.dbbox().top)
-    bottom = float(raw.dbbox().bottom)
     source_y = top + BUS_CLEARANCE_UM
     drain_y = bottom - BUS_CLEARANCE_UM
     for point in source_points:

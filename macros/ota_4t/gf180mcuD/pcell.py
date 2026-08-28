@@ -6,7 +6,7 @@ import importlib.util
 from functools import cache
 from pathlib import Path
 
-LAYOUT_POLICY = "symmetric-native-fingers-with-edge-dummies-v2"
+LAYOUT_POLICY = "symmetric-native-fingers-with-edge-dummies-v3"
 IMPLEMENTATION_FILES = (
     Path(__file__).resolve().parents[3] / "technologies/gf180mcuD/pcells.py",
 )
