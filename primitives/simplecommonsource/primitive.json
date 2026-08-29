@@ -12,7 +12,8 @@
        "name": "m1",
        "vd": "VOUT",
        "vg": "VIN",
-       "vs": "VDD"
+       "vs": "VDD",
+       "vb": "VDD"
       }
     ]
   },

@@ -43,7 +43,6 @@
     { "name": "cgsol__m1", "expr": "lut.m1.cgsol_total" },
     { "name": "cgdol__m1", "expr": "lut.m1.cgdol_total" },
     { "name": "cjs__m1", "expr": "lut.m1.cjs_total" },
-    { "name": "cjd__m1", "expr": "lut.m1.cjd_total" },
-
+    { "name": "cjd__m1", "expr": "lut.m1.cjd_total" }
   ]
 }
