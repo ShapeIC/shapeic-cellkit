@@ -1,0 +1,49 @@
+{
+  "inputs": [
+    { "name": "current", "kind": "scalar", "required": true },
+    { "name": "VIN", "kind": "vector", "required": true, "source": "port_voltage" },
+    { "name": "VOUT", "kind": "vector", "required": true, "source": "port_voltage" },
+    { "name": "VDD", "kind": "vector", "required": true, "source": "port_voltage" }
+  ],
+  "sweep_mode": "cartesian",
+  "derived": [
+    { "name": "id_m1", "expr": "current" },
+    { "name": "vds_m1", "expr": "VOUT - VDD" },
+    { "name": "vgs_m1", "expr": "VIN - VDD" }
+  ],
+  "lut": [
+    {
+      "name": "m1",
+      "device": "pmos",
+      "current": "id_m1",
+      "dof": {
+        "vds": "vds_m1",
+        "vgs": "vgs_m1"
+      },
+      "lengths": "$lut_config.lengths"
+    }
+  ],
+  "columns": [
+    { "name": "length__m1", "expr": "lut.m1.length" },
+    { "name": "width__m1", "expr": "lut.m1.total_width" },
+    { "name": "nf__m1", "expr": "lut.m1.nf" },
+    { "name": "gm__m1", "expr": "lut.m1.gmid * id_m1" },
+    { "name": "gds__m1", "expr": "lut.m1.gdsid * id_m1" },
+    { "name": "ro__m1", "expr": "1 / gds__m1" },
+    { "name": "vdsat", "expr": "lut.m1.vdsat" },
+    { "name": "cgg__m1", "expr": "lut.m1.cgg * lut.m1.nf" },
+    { "name": "cgd__m1", "expr": "lut.m1.cgd * lut.m1.nf" },
+    { "name": "cgs__m1", "expr": "lut.m1.cgs * lut.m1.nf" },
+    { "name": "cdg__m1", "expr": "lut.m1.cdg * lut.m1.nf" },
+    { "name": "cdd__m1", "expr": "lut.m1.cdd * lut.m1.nf" },
+    { "name": "cds__m1", "expr": "lut.m1.cds * lut.m1.nf" },
+    { "name": "csg__m1", "expr": "lut.m1.csg * lut.m1.nf" },
+    { "name": "csd__m1", "expr": "lut.m1.csd * lut.m1.nf" },
+    { "name": "css__m1", "expr": "lut.m1.css * lut.m1.nf" },
+    { "name": "cgsol__m1", "expr": "lut.m1.cgsol_total" },
+    { "name": "cgdol__m1", "expr": "lut.m1.cgdol_total" },
+    { "name": "cjs__m1", "expr": "lut.m1.cjs_total" },
+    { "name": "cjd__m1", "expr": "lut.m1.cjd_total" },
+
+  ]
+}

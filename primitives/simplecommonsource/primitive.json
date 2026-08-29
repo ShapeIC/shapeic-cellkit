@@ -1,0 +1,40 @@
+{
+  "name": "simplecommonsource",
+  "version": "1.0",
+  "description": "Simple transistor in common source connection",
+  "transistor_type": "pmos",
+  "subckt_name": "simplecommonsource",
+  "pin_order": ["VIN", "VOUT", "VDD"],
+
+  "small_signal": {
+    "branches": [
+      {
+       "name": "m1",
+       "vd": "VOUT",
+       "vg": "VIN",
+       "vs": "VDD"
+      }
+    ]
+  },
+
+  "ports": {
+    "VIN": {"name": "VIN", "role": "INPUT", "description": "input"},
+    "VOUT": {"name": "VOUT", "role": "OUTPUT", "descriptions": "output"},
+    "VDD": {"name": "VDD", "role": "BIAS", "description": "Vdd node"}
+  },
+
+  "lut_config": {
+    "lut_w": 5e-6,
+    "axes": [
+      { "variable": "vds",   "values": [-1.2, -0.1], "type": "arange" },
+      { "variable": "vgs", "values": [-1.2, -0.1], "type": "arange"  }
+    ],
+    "lengths": [4e-7, 8e-7, 1.6e-6, 3.2e-6, 6.4e-6]
+  },
+
+  "files": {
+    "build":   "build.json",
+    "netlist": "netlist/netlist.spice",
+    "symbol":  "symbol/symbol.sym"
+  }
+}
