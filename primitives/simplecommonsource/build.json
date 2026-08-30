@@ -30,7 +30,6 @@
     { "name": "gm__m1", "expr": "lut.m1.gmid * id_m1" },
     { "name": "gds__m1", "expr": "lut.m1.gdsid * id_m1" },
     { "name": "ro__m1", "expr": "1 / gds__m1" },
-    { "name": "vdsat", "expr": "lut.m1.vdsat" },
     { "name": "cgg__m1", "expr": "lut.m1.cgg * lut.m1.nf" },
     { "name": "cgd__m1", "expr": "lut.m1.cgd * lut.m1.nf" },
     { "name": "cgs__m1", "expr": "lut.m1.cgs * lut.m1.nf" },
