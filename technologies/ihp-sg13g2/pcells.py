@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from ihp.cells import via_stack
 
 IHP_GDSFACTORY_VERSION = "2.0.0"
 IHP_TAP_SIZE_UM = 0.78
@@ -374,3 +375,108 @@ def _point(port):
 
 def _cell_name(primitive, length, wf, nf):
     return f"{primitive}_l{length:.3f}_wf{wf:.3f}_nf{nf}".replace(".", "p")
+
+def _connect_ports_to_bus(
+    c,
+    tech,
+    ports,
+    offset=0.5,
+    verticalConnWidth = 0.3,
+    horizontalConnWidth = 0.3,
+    horizontalLayer="Metal1drawing",
+    verticalLayer="Metal1drawing",
+    busWidth = 0.3,
+    busSide="bottom",
+    busDirection="Horizontal",
+    pinName=None,
+    pinLayer=None,
+    pinTextLayer=None
+):
+
+    xs = [float(port.center[0]) for port in ports]
+    ys = [float(port.center[1]) for port in ports]
+
+    # Bus debajo de los dispositivos
+    if busSide=="bottom":
+        bus_y = min(ys) - offset
+    elif busSide=="top":
+        bus_y = max(ys) + offset
+    elif busSide=="middle":
+        bus_y = (min(ys)+max(ys))/2+offset
+    else:
+        bus_y = min(ys) - offset
+
+
+    if busDirection=="Horizontal":
+        c.add_polygon(
+            [
+                (min(xs) - busWidth / 2, bus_y - busWidth / 2),
+                (max(xs) + busWidth / 2, bus_y - busWidth / 2),
+                (max(xs) + busWidth / 2, bus_y + busWidth / 2),
+                (min(xs) - busWidth / 2, bus_y + busWidth / 2),
+            ],
+            layer=horizontalLayer,
+        )
+
+        for port in ports:
+            x, y = map(float, port.center)
+
+            c.add_polygon(
+                [
+                    (x - busWidth / 2, bus_y - busWidth / 2),
+                    (x + busWidth / 2, bus_y - busWidth / 2),
+                    (x + busWidth / 2, y + busWidth / 2),
+                    (x - busWidth / 2, y + busWidth / 2),
+                ],
+                layer=verticalLayer,
+            )
+
+            if horizontalLayer != verticalLayer:
+
+                _populate_via_stack(
+                    c,
+                    tech,
+                    column_width=busWidth,
+                    row_width=busWidth,
+                    center=(x,bus_y)
+                )
+
+    if pinName != None:
+        c.add_polygon(
+            [
+                (min(xs) - busWidth / 2, bus_y - busWidth / 2),
+                (max(xs) + busWidth / 2, bus_y - busWidth / 2),
+                (max(xs) + busWidth / 2, bus_y + busWidth / 2),
+                (min(xs) - busWidth / 2, bus_y + busWidth / 2),
+            ],
+            layer=pinLayer,
+        )
+        c.add_label(text=pinName, position=((min(xs)+max(xs))/2, bus_y), layer=pinTextLayer)
+
+        c.add_port(
+            name=pinName,
+            center=((min(xs)+max(xs))/2, bus_y),
+            width=max(xs)-min(xs)+busWidth,
+            orientation=0,
+            layer=pinLayer
+        )
+
+def _populate_via_stack(c, tech, column_width=10.0, row_width=10.0, center=[0,0], bottom_layer="Metal1", top_layer="Metal2"):
+
+        
+    via1_size = tech.via1_size_rf
+    via1_spacing = tech.via1_spacing_wide
+    via1_enc = tech.via1_enc
+
+    column_num_float = (column_width-via1_enc+via1_spacing)/(via1_size+via1_spacing)
+    column_num_int = int(column_num_float)
+    column_num_dec = column_num_float-column_num_int
+
+    row_num_float = (row_width-via1_enc+via1_spacing)/(via1_size+via1_spacing)
+    row_num_int = int(row_num_float)
+
+    via_stack1 = c.add_ref(via_stack(bottom_layer=bottom_layer, top_layer=top_layer, vn_columns=row_num_int, vn_rows=column_num_int, size=(row_width, column_width)))
+    via_stack1.x=center[0]
+    via_stack1.y=center[1]
+
+    return via_stack1
