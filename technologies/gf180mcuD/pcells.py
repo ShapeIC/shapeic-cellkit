@@ -1,4 +1,4 @@
-"""GF180MCU D primitive PCells for ShapeIC physical characterization."""
+"""Shared gf180mcuD device/routing helpers and OTA assembly."""
 
 from __future__ import annotations
 
@@ -12,66 +12,12 @@ BUS_CLEARANCE_UM = 0.55
 GRID_UM = 0.005
 
 
-def build_simplediffpair(geometry):
-    gf, layer, nfet, _pfet = _backend()
-    device = _bussed_mos(
-        gf,
-        layer,
-        nfet,
-        "nmos",
-        geometry.length_m * 1.0e6,
-        geometry.finger_width_m * 1.0e6,
-        geometry.nf,
-    )
-    return _simple_diff_pair(gf, layer, device, geometry)
-
-
-def build_currentmirror(geometry):
-    gf, layer, _nfet, pfet = _backend()
-    device = _bussed_mos(
-        gf,
-        layer,
-        pfet,
-        "pmos",
-        geometry.length_m * 1.0e6,
-        geometry.finger_width_m * 1.0e6,
-        geometry.nf,
-    )
-    return _current_mirror(gf, layer, device, geometry)
-
-
-def build_ota_4t(instances):
-    """Place and route the CellKit primitive instances for the OTA macro."""
-    if set(instances) != {"xdp", "xcm"}:
-        raise ValueError("ota_4t requires exactly xdp and xcm geometries")
-    gf, layer, nfet, pfet = _backend()
+def build_ota_4t(instances, diff_cell, mirror_cell):
+    """Route the OTA using components built by its primitive providers."""
+    gf, layer, _nfet, _pfet = _backend()
     diff_geometry = instances["xdp"]
     mirror_geometry = instances["xcm"]
-    diff_device = _bussed_mos(
-        gf,
-        layer,
-        nfet,
-        "nmos",
-        diff_geometry.length_m * 1.0e6,
-        diff_geometry.finger_width_m * 1.0e6,
-        diff_geometry.nf,
-    )
-    mirror_device = _bussed_mos(
-        gf,
-        layer,
-        pfet,
-        "pmos",
-        mirror_geometry.length_m * 1.0e6,
-        mirror_geometry.finger_width_m * 1.0e6,
-        mirror_geometry.nf,
-    )
-    diff = _simple_diff_pair(
-        gf, layer, diff_device, diff_geometry, label_ports=False
-    )
-    mirror = _current_mirror(
-        gf, layer, mirror_device, mirror_geometry, label_ports=False
-    )
-    return _ota_4t(gf, layer, diff, mirror, diff_geometry, mirror_geometry)
+    return _ota_4t(gf, layer, diff_cell, mirror_cell, diff_geometry, mirror_geometry)
 
 
 def _backend():
@@ -181,98 +127,6 @@ def _bussed_mos(gf, layer, factory, kind, length, wf, nf):
     _add_port(component, layer, "S", source, 2)
     _add_port(component, layer, "D", drain, 3)
     _add_port(component, layer, "B", body, 4)
-    return component
-
-
-def _simple_diff_pair(gf, layer, device, geometry, *, label_ports=True):
-    component = _component(
-        gf,
-        _cell_name(
-            "simplediffpair",
-            geometry.length_m * 1e6,
-            geometry.finger_width_m * 1e6,
-            geometry.nf,
-        ),
-    )
-    refs = _place_four(component, device)
-    left, right, dummy_left, dummy_right = refs
-    source_y = max(float(ref.dbbox().top) for ref in refs) + 0.9
-    source = (0.0, source_y)
-    for ref in refs:
-        terminal = _point(ref.ports["S"])
-        _wire(component, layer.metal2, terminal, (terminal[0], source_y))
-    _wire_terminal_span(component, layer.metal2, refs, ("G", "D", "S"), source_y)
-    for ref in (dummy_left, dummy_right):
-        _tie_dummy_to_source(component, layer, ref, source_y)
-
-    bulk_y = min(float(ref.dbbox().bottom) for ref in refs) - 0.9
-    bulk = (0.0, bulk_y)
-    for ref in refs:
-        terminal = _point(ref.ports["B"])
-        _wire(component, layer.metal4, terminal, (terminal[0], bulk_y))
-    _wire_across(component, layer.metal4, refs, "B", bulk_y)
-
-    _copy_port(component, layer, "DP", left.ports["D"], 3, label=label_ports)
-    _copy_port(component, layer, "DN", right.ports["D"], 3, label=label_ports)
-    _copy_port(component, layer, "GP", left.ports["G"], 3, label=label_ports)
-    _copy_port(component, layer, "GN", right.ports["G"], 3, label=label_ports)
-    _add_port(component, layer, "S", source, 2, label=label_ports)
-    _add_port(component, layer, "B", bulk, 4, label=label_ports)
-    return component
-
-
-def _current_mirror(gf, layer, device, geometry, *, label_ports=True):
-    component = _component(
-        gf,
-        _cell_name(
-            "currentmirror",
-            geometry.length_m * 1e6,
-            geometry.finger_width_m * 1e6,
-            geometry.nf,
-        ),
-    )
-    refs = _place_four(component, device)
-    output, reference, dummy_left, dummy_right = refs
-    source_y = max(float(ref.dbbox().top) for ref in refs) + 0.9
-    source = (0.0, source_y)
-    for ref in refs:
-        terminal = _point(ref.ports["S"])
-        _wire(component, layer.metal2, terminal, (terminal[0], source_y))
-    _wire_terminal_span(component, layer.metal2, refs, ("G", "D", "S"), source_y)
-    for ref in (dummy_left, dummy_right):
-        _tie_dummy_to_source(component, layer, ref, source_y)
-
-    reference_drain = _point(reference.ports["D"])
-    output_gate = _point(output.ports["G"])
-    reference_gate = _point(reference.ports["G"])
-    gate_bus_y = source_y
-    output_gate_bus = (output_gate[0], gate_bus_y)
-    reference_gate_bus = (reference_gate[0], gate_bus_y)
-    _wire(component, layer.metal3, output_gate, output_gate_bus)
-    _wire(component, layer.metal3, reference_gate, reference_gate_bus)
-    _wire(component, layer.metal3, output_gate_bus, reference_gate_bus)
-    _wire(
-        component,
-        layer.metal3,
-        reference_drain,
-        (reference_drain[0], gate_bus_y),
-    )
-
-    bulk_y = min(float(ref.dbbox().bottom) for ref in refs) - 0.9
-    bulk = (0.0, bulk_y)
-    for ref in refs:
-        terminal = _point(ref.ports["B"])
-        _wire(component, layer.metal4, terminal, (terminal[0], bulk_y))
-    _wire_across(component, layer.metal4, refs, "B", bulk_y)
-
-    _copy_port(
-        component, layer, "DOUT", output.ports["D"], 3, label=label_ports
-    )
-    _copy_port(
-        component, layer, "DREF", reference.ports["D"], 3, label=label_ports
-    )
-    _add_port(component, layer, "S", source, 2, label=label_ports)
-    _add_port(component, layer, "B", bulk, 4, label=label_ports)
     return component
 
 

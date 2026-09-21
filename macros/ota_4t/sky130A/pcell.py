@@ -9,11 +9,17 @@ from pathlib import Path
 LAYOUT_POLICY = "symmetric-native-fingers-with-edge-dummies-v1"
 IMPLEMENTATION_FILES = (
     Path(__file__).resolve().parents[3] / "technologies/sky130A/pcells.py",
+    Path(__file__).resolve().parents[3] / "primitives/simplediffpair/sky130A/pcell.py",
+    Path(__file__).resolve().parents[3] / "primitives/simplecurrentmirror/sky130A/pcell.py",
 )
 
 
 def build(instances):
-    return _implementation().build_ota_4t(instances)
+    if set(instances) != {"xdp", "xcm"}:
+        raise ValueError("ota_4t requires exactly xdp and xcm geometries")
+    diff = _primitive("simplediffpair").build(instances["xdp"], label_ports=False)
+    mirror = _primitive("simplecurrentmirror").build(instances["xcm"], label_ports=False)
+    return _implementation().build_ota_4t(instances, diff, mirror)
 
 
 @cache
@@ -24,6 +30,19 @@ def _implementation():
     )
     if spec is None or spec.loader is None:
         raise RuntimeError(f"could not load SKY130A macro PCell implementation: {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@cache
+def _primitive(name):
+    path = next(path for path in IMPLEMENTATION_FILES[1:] if path.parents[1].name == name)
+    spec = importlib.util.spec_from_file_location(
+        f"_shapeic_cellkit_{path.parent.name}_{name}", path
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"could not load primitive PCell: {path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module

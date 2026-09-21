@@ -1,4 +1,4 @@
-"""Validated IHP primitive PCells used by physical LUT generation."""
+"""Shared ihp-sg13g2 device/routing helpers and OTA assembly."""
 
 from __future__ import annotations
 
@@ -12,66 +12,12 @@ IHP_BUS_CLEARANCE_UM = 0.2
 LAYOUT_POLICY = "symmetric-adjacent-with-edge-dummies-v3"
 
 
-def build_simplediffpair(geometry):
-    gf, cells, mos_core, tech = _backend()
-    component = _simple_diff_pair(
-        gf,
-        cells,
-        mos_core,
-        tech,
-        geometry.length_m * 1.0e6,
-        geometry.finger_width_m * 1.0e6,
-        geometry.nf,
-    )
-    _validate_external_port_isolation(
-        component, gf.kdb, ("DP", "DN", "GP", "GN", "S", "B")
-    )
-    return component
-
-
-def build_currentmirror(geometry):
-    gf, cells, mos_core, tech = _backend()
-    component = _current_mirror(
-        gf,
-        cells,
-        mos_core,
-        tech,
-        geometry.length_m * 1.0e6,
-        geometry.finger_width_m * 1.0e6,
-        geometry.nf,
-    )
-    _validate_external_port_isolation(
-        component, gf.kdb, ("DOUT", "DREF", "S", "B")
-    )
-    return component
-
-
-def build_ota_4t(instances):
-    """Place and route the CellKit primitive instances for the OTA macro."""
-    if set(instances) != {"xdp", "xcm"}:
-        raise ValueError("ota_4t requires exactly xdp and xcm geometries")
-    gf, cells, mos_core, tech = _backend()
+def build_ota_4t(instances, diff_cell, mirror_cell):
+    """Route the OTA using components built by its primitive providers."""
+    gf, _cells, _mos_core, tech = _backend()
     diff_geometry = instances["xdp"]
     mirror_geometry = instances["xcm"]
-    diff = _simple_diff_pair(
-        gf,
-        cells,
-        mos_core,
-        tech,
-        diff_geometry.length_m * 1.0e6,
-        diff_geometry.finger_width_m * 1.0e6,
-        diff_geometry.nf,
-    )
-    mirror = _current_mirror(
-        gf,
-        cells,
-        mos_core,
-        tech,
-        mirror_geometry.length_m * 1.0e6,
-        mirror_geometry.finger_width_m * 1.0e6,
-        mirror_geometry.nf,
-    )
-    component = _ota_4t(gf, tech, diff, mirror, diff_geometry, mirror_geometry)
+    component = _ota_4t(gf, tech, diff_cell, mirror_cell, diff_geometry, mirror_geometry)
     _validate_external_port_isolation(
         component, gf.kdb, ("VOUT", "VINP", "VINN", "IBIAS", "VDD", "VSS")
     )
@@ -154,102 +100,6 @@ def _backend():
         )
     PDK.activate()
     return gf, cells, _mos_core, TECH
-
-
-def _simple_diff_pair(gf, cells, mos_core, tech, length, wf, nf):
-    component = gf.Component(_cell_name("simplediffpair", length, wf, nf))
-    device = _bussed_mos_device(gf, mos_core, tech, "nmos", length, wf, nf)
-    pitch = float(device.dbbox().right) - float(device.dbbox().left) + 1.2
-    left = component.add_ref(device)
-    right = component.add_ref(device)
-    left.move((-pitch / 2, 0))
-    right.move((pitch / 2, 0))
-    dummy_left = component.add_ref(device)
-    dummy_right = component.add_ref(device)
-    dummy_left.move((-3.0 * pitch / 2, 0))
-    dummy_right.move((3.0 * pitch / 2, 0))
-
-    devices = (left, right, dummy_left, dummy_right)
-    source_y = min(float(ref.dbbox().bottom) for ref in devices) - 1.0
-    source = (0.0, source_y)
-    for ref in devices:
-        _wire(component, _point(ref.ports["S"]), source)
-    for ref in (dummy_left, dummy_right):
-        _wire(component, _point(ref.ports["D"]), source)
-        _wire(component, _point(ref.ports["G"]), source)
-
-    bulk_ref = component.add_ref(
-        cells.ptap1(width=IHP_TAP_SIZE_UM, length=IHP_TAP_SIZE_UM)
-    )
-    bulk_ref.move((0.0, source_y - 1.5))
-    _add_external_ports(
-        component,
-        {
-            "DP": _point(left.ports["D"]),
-            "DN": _point(right.ports["D"]),
-            "GP": _point(left.ports["G"]),
-            "GN": _point(right.ports["G"]),
-            "S": source,
-            "B": _point(bulk_ref.ports["TAP"]),
-        },
-    )
-    return component
-
-
-def _current_mirror(gf, cells, mos_core, tech, length, wf, nf):
-    component = gf.Component(_cell_name("currentmirror", length, wf, nf))
-    device = _bussed_mos_device(gf, mos_core, tech, "pmos", length, wf, nf)
-    pitch = float(device.dbbox().right) - float(device.dbbox().left) + 1.2
-    output = component.add_ref(device)
-    reference = component.add_ref(device)
-    output.move((-pitch / 2, 0))
-    reference.move((pitch / 2, 0))
-    dummy_left = component.add_ref(device)
-    dummy_right = component.add_ref(device)
-    dummy_left.move((-3.0 * pitch / 2, 0))
-    dummy_right.move((3.0 * pitch / 2, 0))
-
-    devices = (output, reference, dummy_left, dummy_right)
-    source_y = max(float(ref.dbbox().top) for ref in devices) + 1.0
-    source = (0.0, source_y)
-    for ref in devices:
-        _wire(component, _point(ref.ports["S"]), source)
-    for ref in (dummy_left, dummy_right):
-        _wire(component, _point(ref.ports["D"]), source)
-        _wire(component, _point(ref.ports["G"]), source)
-
-    reference_drain = _point(reference.ports["D"])
-    gate_bus = (0.0, min(float(ref.dbbox().bottom) for ref in devices) - 1.0)
-    for terminal in (
-        _point(output.ports["G"]),
-        _point(reference.ports["G"]),
-        reference_drain,
-    ):
-        _wire(component, terminal, gate_bus)
-    bulk_ref = component.add_ref(
-        cells.ntap1(width=IHP_TAP_SIZE_UM, length=IHP_TAP_SIZE_UM)
-    )
-    bulk_ref.move((0.0, source_y + 1.5))
-    bulk = _point(bulk_ref.ports["TAP"])
-    component.add_polygon(
-        [
-            (-2.0 * pitch, -wf / 2 - 1.0),
-            (2.0 * pitch, -wf / 2 - 1.0),
-            (2.0 * pitch, bulk[1] + 1.0),
-            (-2.0 * pitch, bulk[1] + 1.0),
-        ],
-        layer="NWelldrawing",
-    )
-    _add_external_ports(
-        component,
-        {
-            "DOUT": _point(output.ports["D"]),
-            "DREF": reference_drain,
-            "S": source,
-            "B": bulk,
-        },
-    )
-    return component
 
 
 def _ihp_mos_device(mos_core, tech, kind, length, wf, nf):
