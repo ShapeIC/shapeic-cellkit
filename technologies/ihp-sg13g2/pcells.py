@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from ihp.cells import via_stack
 
 IHP_GDSFACTORY_VERSION = "2.0.0"
 IHP_TAP_SIZE_UM = 0.78
@@ -151,7 +150,12 @@ def _bussed_mos_device(gf, mos_core, tech, kind, length, wf, nf):
         )
 
     source_columns = metal_columns[0::2]
-    drain_columns = metal_columns[1::2]
+    sd_ports = sorted(
+        (port for port in raw.ports if port.name.startswith("SD") and port.name[2:].isdigit()),
+        key=lambda port: int(port.name[2:]),
+    )
+    if [port.name for port in sd_ports] != [f"SD{i}" for i in range(nf + 1)]:
+        raise ValueError(f"{kind} nf={nf} requires ports SD0 through SD{nf}")
     contact_cut_size = float(tech.cont_size)
     contact_pad_size = contact_cut_size + 2.0 * float(tech.gat_d)
     gate_bottom = min(box[1] for box in gate_fingers)
@@ -194,20 +198,31 @@ def _bussed_mos_device(gf, mos_core, tech, kind, length, wf, nf):
         - IHP_BUS_CLEARANCE_UM
     )
     drain_bus_y = gate_top + IHP_ROUTE_WIDTH_UM / 2.0 + IHP_BUS_CLEARANCE_UM
-    if kind == "nmos":
-        source = _add_terminal_bus(
-            component, source_columns, source_bus_y, connect_from_top=False
+    terminal_centers = []
+    for parity, side, bus_y in (
+        (0, "bottom" if kind == "nmos" else "top",
+         source_bus_y if kind == "nmos" else drain_bus_y),
+        (1, "top" if kind == "nmos" else "bottom",
+         drain_bus_y if kind == "nmos" else source_bus_y),
+    ):
+        ports = sd_ports[parity::2]
+        xs = [float(port.center[0]) for port in ports]
+        ys = [float(port.center[1]) for port in ports]
+        offset = min(ys) - bus_y if side == "bottom" else bus_y - max(ys)
+        _connect_ports_to_bus(
+            component,
+            tech,
+            ports,
+            offset=offset,
+            verticalConnWidth=min(right - left for left, _, right, _ in metal_columns[parity::2]),
+            horizontalLayer="Metal1drawing",
+            verticalLayer="Metal1drawing",
+            busWidth=IHP_ROUTE_WIDTH_UM,
+            busSide=side,
+            busDirection="Horizontal",
         )
-        drain = _add_terminal_bus(
-            component, drain_columns, drain_bus_y, connect_from_top=True
-        )
-    else:
-        source = _add_terminal_bus(
-            component, source_columns, drain_bus_y, connect_from_top=True
-        )
-        drain = _add_terminal_bus(
-            component, drain_columns, source_bus_y, connect_from_top=False
-        )
+        terminal_centers.append(((min(xs) + max(xs)) / 2.0, bus_y))
+    source, drain = terminal_centers
     component.add_port(
         name="S",
         center=source,
@@ -234,6 +249,118 @@ def _bussed_mos_device(gf, mos_core, tech, kind, length, wf, nf):
     )
     return component
 
+def _interdigitated_mos_devices(gf, cell_name, mos_core, tech, kind, length, wf, nf):
+    raw = _ihp_mos_device(mos_core, tech, kind, length, wf, nf+2) #+2 for dummys
+    component = gf.Component(cell_name)
+    component.add_ref(raw)
+    
+    metal1BusWidth = 0.3
+    metal2BusWidth = 0.3
+    metal1Sep = 0.2
+    metal2Sep = 0.21
+
+    _connect_ports_to_bus(
+        component, 
+        tech,
+        ports=[raw.ports["G3"], raw.ports["G4"]],
+        offset=raw.ports["G3"].width/2+metal1BusWidth/2,
+        verticalConnWidth=length,
+        horizontalLayer="Metal1drawing",
+        verticalLayer="GatPolydrawing",
+        busWidth=metal1BusWidth,
+        busSide="bottom",
+        busDirection="Horizontal",
+        pinName="GA",
+        pinLayer="Metal1pin",
+    )
+    _connect_ports_to_bus(
+        component, 
+        tech,
+        ports=[raw.ports["G2"], raw.ports["G5"]],
+        offset=raw.ports["G2"].width/2+metal1BusWidth/2+metal1BusWidth+metal1Sep,
+        verticalConnWidth=length,
+        horizontalLayer="Metal1drawing",
+        verticalLayer="GatPolydrawing",
+        busWidth=metal1BusWidth,
+        busSide="bottom",
+        busDirection="Horizontal",
+        pinName="GB",
+        pinLayer="Metal1pin",
+    )
+
+    _connect_ports_to_bus(
+        component, 
+        tech,
+        ports=[raw.ports["SD0"], raw.ports["SD2"], raw.ports["SD4"], raw.ports["SD6"]],
+        offset=raw.ports["SD1"].width/2+metal1BusWidth/2,
+        verticalConnWidth=0.16,
+        horizontalLayer="Metal2drawing",
+        verticalLayer="Metal1drawing",
+        busWidth=metal2BusWidth,
+        busSide="top",
+        busDirection="Horizontal",
+        pinName="S",
+        pinLayer="Metal2pin",
+    )
+    _connect_ports_to_bus(
+        component, 
+        tech,
+        ports=[raw.ports["SD1"], raw.ports["SD5"]],
+        offset=raw.ports["SD0"].width/2+metal2BusWidth/2+metal2BusWidth+metal2Sep,
+        verticalConnWidth=0.16,
+        horizontalLayer="Metal2drawing",
+        verticalLayer="Metal1drawing",
+        busWidth=metal2BusWidth,
+        busSide="top",
+        busDirection="Horizontal",
+        pinName="DA",
+        pinLayer="Metal2pin",
+    )
+    _connect_ports_to_bus(
+        component, 
+        tech,
+        ports=[raw.ports["SD3"]],
+        offset=raw.ports["SD1"].width/2+metal1BusWidth/2+2*metal2BusWidth+2*metal2Sep,
+        verticalConnWidth=0.16,
+        horizontalLayer="Metal2drawing",
+        verticalLayer="Metal1drawing",
+        busWidth=metal2BusWidth,
+        busSide="top",
+        busDirection="Horizontal",
+        pinName="DB",
+        pinLayer="Metal2pin",
+    )
+
+    _connect_diff_to_gate(
+        component,
+        tech,
+        gate_ports=[raw.ports["G1"]],
+        diff_ports=[raw.ports["SD0"]],
+        offset=raw.ports["G1"].width/2+metal1BusWidth/2,
+        verticalConnWidthGates = length,
+        verticalConnWidthDiff = 0.16,
+        busWidth = 0.3,
+        busSide="bottom",
+        pinName=None,
+        pinLayer=None,
+        pinTextLayer=None
+    )
+    _connect_diff_to_gate(
+        component,
+        tech,
+        gate_ports=[raw.ports["G6"]],
+        diff_ports=[raw.ports["SD6"]],
+        offset=raw.ports["G6"].width/2+metal1BusWidth/2,
+        verticalConnWidthGates = length,
+        verticalConnWidthDiff = 0.16,
+        busWidth = 0.3,
+        busSide="bottom",
+        pinName=None,
+        pinLayer=None,
+        pinTextLayer=None
+    )
+
+    return component
 
 def _add_terminal_bus(component, columns, bus_y, *, connect_from_top):
     centers = [(box[0] + box[2]) / 2.0 for box in columns]
@@ -396,24 +523,23 @@ def _connect_ports_to_bus(
     xs = [float(port.center[0]) for port in ports]
     ys = [float(port.center[1]) for port in ports]
 
-    # Bus debajo de los dispositivos
-    if busSide=="bottom":
-        bus_y = min(ys) - offset
-    elif busSide=="top":
-        bus_y = max(ys) + offset
-    elif busSide=="middle":
-        bus_y = (min(ys)+max(ys))/2+offset
-    else:
-        bus_y = min(ys) - offset
-
 
     if busDirection=="Horizontal":
+        if busSide=="bottom":
+            bus_y = min(ys) - offset
+        elif busSide=="top":
+            bus_y = max(ys) + offset
+        elif busSide=="middle":
+            bus_y = (min(ys)+max(ys))/2+offset
+        else:
+            bus_y = min(ys) - offset
+
         c.add_polygon(
             [
-                (min(xs) - busWidth / 2, bus_y - busWidth / 2),
-                (max(xs) + busWidth / 2, bus_y - busWidth / 2),
-                (max(xs) + busWidth / 2, bus_y + busWidth / 2),
-                (min(xs) - busWidth / 2, bus_y + busWidth / 2),
+                (min(xs) - verticalConnWidth / 2, bus_y - busWidth / 2),
+                (max(xs) + verticalConnWidth / 2, bus_y - busWidth / 2),
+                (max(xs) + verticalConnWidth / 2, bus_y + busWidth / 2),
+                (min(xs) - verticalConnWidth / 2, bus_y + busWidth / 2),
             ],
             layer=horizontalLayer,
         )
@@ -423,25 +549,74 @@ def _connect_ports_to_bus(
 
             c.add_polygon(
                 [
-                    (x - busWidth / 2, bus_y - busWidth / 2),
-                    (x + busWidth / 2, bus_y - busWidth / 2),
-                    (x + busWidth / 2, y + busWidth / 2),
-                    (x - busWidth / 2, y + busWidth / 2),
+                    (x - verticalConnWidth / 2, min(y,bus_y) - busWidth / 2),
+                    (x + verticalConnWidth / 2, min(y,bus_y) - busWidth / 2),
+                    (x + verticalConnWidth / 2, max(y,bus_y) + busWidth / 2),
+                    (x - verticalConnWidth / 2, max(y,bus_y) + busWidth / 2),
                 ],
                 layer=verticalLayer,
             )
 
             if horizontalLayer != verticalLayer:
+                bottom_layer, top_layer = _via_stack_layers(horizontalLayer, verticalLayer)
 
                 _populate_via_stack(
                     c,
                     tech,
                     column_width=busWidth,
                     row_width=busWidth,
-                    center=(x,bus_y)
+                    center=(x,bus_y),
+                    bottom_layer=bottom_layer,
+                    top_layer=top_layer
+                )
+    elif busDirection=="Vertical":
+        # Bus al lado de los dispositivos
+        if busSide=="left":
+            bus_x = min(xs) - offset
+        elif busSide=="right":
+            bus_x = max(xs) + offset
+        elif busSide=="middle":
+            bus_x = (min(xs)+max(xs))/2+offset
+        else:
+            bus_x = min(xs) - offset
+
+        c.add_polygon(
+            [
+                (bus_x - busWidth / 2, min(ys) - busWidth / 2),
+                (bus_x + busWidth / 2, min(ys) - busWidth / 2),
+                (bus_x + busWidth / 2, max(ys) + busWidth / 2),
+                (bus_x - busWidth / 2, max(ys) + busWidth / 2),
+            ],
+            layer=verticalLayer,
+        )
+
+        for port in ports:
+            x, y = map(float, port.center)
+
+            c.add_polygon(
+                [
+                    (min(x,bus_x) - horizontalConnWidth / 2, y - horizontalConnWidth / 2),
+                    (max(x,bus_x) + horizontalConnWidth / 2, y - horizontalConnWidth / 2),
+                    (max(x,bus_x) + horizontalConnWidth / 2, y + horizontalConnWidth / 2),
+                    (min(x,bus_x) - horizontalConnWidth / 2, y + horizontalConnWidth / 2),
+                ],
+                layer=horizontalLayer,
+            )
+
+            if horizontalLayer != verticalLayer:
+                bottom_layer, top_layer = _via_stack_layers(horizontalLayer, verticalLayer)
+
+                _populate_via_stack(
+                    c,
+                    tech,
+                    column_width=busWidth,
+                    row_width=busWidth,
+                    center=(bus_x,y),
+                    bottom_layer=bottom_layer,
+                    top_layer=top_layer
                 )
 
-    if pinName != None:
+    if pinName != None and busDirection=="Horizontal":
         c.add_polygon(
             [
                 (min(xs) - busWidth / 2, bus_y - busWidth / 2),
@@ -451,7 +626,8 @@ def _connect_ports_to_bus(
             ],
             layer=pinLayer,
         )
-        c.add_label(text=pinName, position=((min(xs)+max(xs))/2, bus_y), layer=pinTextLayer)
+        if pinTextLayer!=None:
+            c.add_label(text=pinName, position=((min(xs)+max(xs))/2, bus_y), layer=pinTextLayer)
 
         c.add_port(
             name=pinName,
@@ -460,10 +636,55 @@ def _connect_ports_to_bus(
             orientation=0,
             layer=pinLayer
         )
+    elif pinName != None and busDirection=="Vertical":
+        c.add_polygon(
+            [
+                (bus_x - busWidth / 2, min(ys) - busWidth / 2),
+                (bus_x + busWidth / 2, min(ys) - busWidth / 2),
+                (bus_x + busWidth / 2, max(ys) + busWidth / 2),
+                (bus_x - busWidth / 2, max(ys) + busWidth / 2),
+            ],
+            layer=pinLayer,
+        )
+        if pinTextLayer!=None:
+            c.add_label(text=pinName, position=(bus_x, (min(ys)+max(ys))/2), layer=pinTextLayer)
+
+        c.add_port(
+            name=pinName,
+            center=(bus_x, (min(ys)+max(ys))/2),
+            width=max(ys)-min(ys)+busWidth,
+            orientation=90,
+            layer=pinLayer
+        )
+
+def _via_stack_layers(first_layer, second_layer):
+    # Los nombres de dibujo se convierten a los nombres usados por via_stack.
+    layer_order = {
+        "Activ": 0,
+        "GatPoly": 0,
+        "Metal1": 1,
+        "Metal2": 2,
+        "Metal3": 3,
+        "Metal4": 4,
+        "Metal5": 5,
+        "TopMetal1": 6,
+        "TopMetal2": 7,
+    }
+    first = first_layer.removesuffix("drawing")
+    second = second_layer.removesuffix("drawing")
+    for layer in (first, second):
+        if layer not in layer_order:
+            raise ValueError(f"Unsupported via stack layer: {layer}")
+    if first != second and layer_order[first] == layer_order[second]:
+        raise ValueError(f"Cannot stack between {first} and {second}")
+    if layer_order[first] <= layer_order[second]:
+        return first, second
+    return second, first
+
 
 def _populate_via_stack(c, tech, column_width=10.0, row_width=10.0, center=[0,0], bottom_layer="Metal1", top_layer="Metal2"):
+    from ihp.cells import via_stack
 
-        
     via1_size = tech.via1_size_rf
     via1_spacing = tech.via1_spacing_wide
     via1_enc = tech.via1_enc
@@ -480,3 +701,112 @@ def _populate_via_stack(c, tech, column_width=10.0, row_width=10.0, center=[0,0]
     via_stack1.y=center[1]
 
     return via_stack1
+
+def _get_sd_ports_even_odd(ref):
+    sd_ports = []
+
+    for p in ref.ports:
+        if p.name.startswith("SD"):
+            idx = int(p.name.replace("SD", ""))
+            sd_ports.append((idx, p))
+
+    sd_ports = sorted(sd_ports, key=lambda x: x[0])
+
+    even_ports = [p for idx, p in sd_ports if idx % 2 == 0]
+    odd_ports  = [p for idx, p in sd_ports if idx % 2 == 1]
+
+    return even_ports, odd_ports    
+
+def _connect_diff_to_gate(
+    c,
+    tech,
+    gate_ports,
+    diff_ports,
+    offset=0.5,
+    verticalConnWidthGates = 0.3,
+    horizontalConnWidthGates = 0.3,
+    verticalConnWidthDiff = 0.3,
+    horizontalConnWidthDiff = 0.3,
+    horizontalLayerGates="Metal1drawing",
+    verticalLayerGates="GatPolydrawing",
+    horizontalLayerDiff="Metal1drawing",
+    verticalLayerDiff="Metal1drawing",
+    busWidth = 0.3,
+    busSide="bottom",
+    busDirection="Horizontal",
+    pinName=None,
+    pinLayer=None,
+    pinTextLayer=None
+):
+    
+    _connect_ports_to_bus(
+        c, 
+        tech, 
+        diff_ports, 
+        offset, 
+        verticalConnWidthDiff, 
+        horizontalConnWidthDiff,
+        horizontalLayerDiff,
+        verticalLayerDiff,
+        busWidth,
+        busSide,
+        busDirection,
+    )
+    _connect_ports_to_bus(
+        c, 
+        tech, 
+        gate_ports, 
+        offset, 
+        verticalConnWidthGates, 
+        horizontalConnWidthGates,
+        horizontalLayerGates,
+        verticalLayerGates,
+        busWidth,
+        busSide,
+        busDirection,
+    )
+
+    xs = [float(port.center[0]) for port in gate_ports+diff_ports]
+    ys = [float(port.center[1]) for port in gate_ports+diff_ports]
+
+    if busDirection=="Horizontal":
+        if busSide=="bottom":
+            bus_y = min(ys) - offset
+        elif busSide=="top":
+            bus_y = max(ys) + offset
+        elif busSide=="middle":
+            bus_y = (min(ys)+max(ys))/2+offset
+        else:
+            bus_y = min(ys) - offset
+
+        c.add_polygon(
+            [
+                (min(xs), bus_y - busWidth / 2),
+                (max(xs), bus_y - busWidth / 2),
+                (max(xs), bus_y + busWidth / 2),
+                (min(xs), bus_y + busWidth / 2),
+            ],
+            layer=horizontalLayerDiff,
+        )
+
+    elif busDirection=="Vertical":
+        # Bus al lado de los dispositivos
+        if busSide=="left":
+            bus_x = min(xs) - offset
+        elif busSide=="right":
+            bus_x = max(xs) + offset
+        elif busSide=="middle":
+            bus_x = (min(xs)+max(xs))/2+offset
+        else:
+            bus_x = min(xs) - offset
+
+        c.add_polygon(
+            [
+                (bus_x - busWidth / 2, min(ys) ),
+                (bus_x + busWidth / 2, min(ys) ),
+                (bus_x + busWidth / 2, max(ys) ),
+                (bus_x - busWidth / 2, max(ys) ),
+            ],
+            layer=verticalLayerDiff,
+        )
+
