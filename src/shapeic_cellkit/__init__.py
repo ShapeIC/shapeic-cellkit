@@ -1,6 +1,7 @@
 """Public API for ShapeIC logical and physical cell catalogs."""
 
 from .catalog import CellKitCatalog
+from .drc import DrcResult, run_drc
 from .contracts import (
     MacroLayout,
     MacroNet,
@@ -49,4 +50,5 @@ __all__ = [
     "TechnologyLoadError",
     "TechnologyNotFoundError",
     "load_primitive_descriptor",
+    "run_drc",
 ]
