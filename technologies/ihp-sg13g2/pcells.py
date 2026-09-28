@@ -291,7 +291,7 @@ def _interdigitated_mos_devices(gf, cell_name, mos_core, tech, kind, length, wf,
     _connect_ports_to_bus(
         component, 
         tech,
-        ports=[raw.ports["SD0"], raw.ports["SD2"], raw.ports["SD4"], raw.ports["SD6"]],
+        ports=[raw.ports["SD2"], raw.ports["SD4"]],
         offset=raw.ports["SD1"].width/2+metal1BusWidth/2,
         verticalConnWidth=0.16,
         horizontalLayer="Metal2drawing",
@@ -341,8 +341,8 @@ def _interdigitated_mos_devices(gf, cell_name, mos_core, tech, kind, length, wf,
         verticalConnWidthDiff = 0.16,
         busWidth = 0.3,
         busSide="bottom",
-        pinName=None,
-        pinLayer=None,
+        pinName="dummy0GS",
+        pinLayer="Metal1pin",
         pinTextLayer=None
     )
     _connect_diff_to_gate(
@@ -355,8 +355,8 @@ def _interdigitated_mos_devices(gf, cell_name, mos_core, tech, kind, length, wf,
         verticalConnWidthDiff = 0.16,
         busWidth = 0.3,
         busSide="bottom",
-        pinName=None,
-        pinLayer=None,
+        pinName="dummy1GS",
+        pinLayer="Metal1pin",
         pinTextLayer=None
     )
 
@@ -619,10 +619,10 @@ def _connect_ports_to_bus(
     if pinName != None and busDirection=="Horizontal":
         c.add_polygon(
             [
-                (min(xs) - busWidth / 2, bus_y - busWidth / 2),
-                (max(xs) + busWidth / 2, bus_y - busWidth / 2),
-                (max(xs) + busWidth / 2, bus_y + busWidth / 2),
-                (min(xs) - busWidth / 2, bus_y + busWidth / 2),
+                (min(xs) - verticalConnWidth / 2, bus_y - busWidth / 2),
+                (max(xs) + verticalConnWidth / 2, bus_y - busWidth / 2),
+                (max(xs) + verticalConnWidth / 2, bus_y + busWidth / 2),
+                (min(xs) - verticalConnWidth / 2, bus_y + busWidth / 2),
             ],
             layer=pinLayer,
         )
@@ -632,7 +632,7 @@ def _connect_ports_to_bus(
         c.add_port(
             name=pinName,
             center=((min(xs)+max(xs))/2, bus_y),
-            width=max(xs)-min(xs)+busWidth,
+            width=max(xs)-min(xs)+verticalConnWidth,
             orientation=0,
             layer=pinLayer
         )
@@ -809,4 +809,46 @@ def _connect_diff_to_gate(
             ],
             layer=verticalLayerDiff,
         )
+
+    if pinName != None and busDirection=="Horizontal":
+        c.add_polygon(
+            [
+                (min(xs), bus_y - busWidth / 2),
+                (max(xs), bus_y - busWidth / 2),
+                (max(xs), bus_y + busWidth / 2),
+                (min(xs), bus_y + busWidth / 2),
+            ],
+            layer=pinLayer,
+        )
+        if pinTextLayer!=None:
+            c.add_label(text=pinName, position=((min(xs)+max(xs))/2, bus_y), layer=pinTextLayer)
+
+        c.add_port(
+            name=pinName,
+            center=((min(xs)+max(xs))/2, bus_y),
+            width=max(xs)-min(xs)+busWidth,
+            orientation=0,
+            layer=pinLayer
+        )
+    elif pinName != None and busDirection=="Vertical":
+        c.add_polygon(
+            [
+                (bus_x - busWidth / 2, min(ys) - busWidth / 2),
+                (bus_x + busWidth / 2, min(ys) - busWidth / 2),
+                (bus_x + busWidth / 2, max(ys) + busWidth / 2),
+                (bus_x - busWidth / 2, max(ys) + busWidth / 2),
+            ],
+            layer=pinLayer,
+        )
+        if pinTextLayer!=None:
+            c.add_label(text=pinName, position=(bus_x, (min(ys)+max(ys))/2), layer=pinTextLayer)
+
+        c.add_port(
+            name=pinName,
+            center=(bus_x, (min(ys)+max(ys))/2),
+            width=max(ys)-min(ys)+busWidth,
+            orientation=90,
+            layer=pinLayer
+        )
+
 
