@@ -2,6 +2,7 @@
 
 from .catalog import CellKitCatalog
 from .drc import DrcResult, run_drc
+from .lvs import LvsResult, run_lvs
 from .contracts import (
     MacroLayout,
     MacroNet,
@@ -32,6 +33,7 @@ __all__ = [
     "CellKitError",
     "InvalidCellKitRootError",
     "InvalidPdkNameError",
+    "LvsResult",
     "MacroLayout",
     "MacroNet",
     "MacroLayoutNotFoundError",
@@ -51,4 +53,5 @@ __all__ = [
     "TechnologyNotFoundError",
     "load_primitive_descriptor",
     "run_drc",
+    "run_lvs",
 ]
