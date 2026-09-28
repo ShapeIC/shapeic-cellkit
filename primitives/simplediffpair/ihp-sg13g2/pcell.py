@@ -223,12 +223,122 @@ def _simple_diff_pair_cc(gf, cells, mos_core, tech, length, wf, nf):
 
     component.add_port(
         name="B",
-        center=((component.xmin+component.xmax)/2, component.ymin + 0.32/2),
+        center=((component.xmin+component.xmax)/2, component.ymin + 0.38/2),
         width=0.32,
         orientation=0,
         layer="Metal1pin"
     )
-    component.add_label(text="B", position=((component.xmin+component.xmax)/2, component.ymin + 0.32/2), layer="Metal1text")
+    component.add_label(text="B", position=((component.xmin+component.xmax)/2, component.ymin + 0.38/2), layer="Metal1text")
+
+    path = gf.Path(
+        [
+            device_top.ports["dummy0GS"].center,
+            ( component.xmin+0.38/2, device_top.ports["dummy0GS"].center[1])
+        ]
+    )
+    path_component = gf.path.extrude(
+        path,
+        layer = "Metal2drawing",
+        width = connWidth
+    )
+
+    component.add_ref(path_component)
+    path = gf.Path(
+        [
+            device_top.ports["dummy1GS"].center,
+            ( component.xmax-0.38/2, device_top.ports["dummy0GS"].center[1])
+        ]
+    )
+    path_component = gf.path.extrude(
+        path,
+        layer = "Metal2drawing",
+        width = connWidth
+    )
+    component.add_ref(path_component)
+
+    path = gf.Path(
+        [
+            device_bottom.ports["dummy0GS"].center,
+            ( component.xmax-0.38/2, device_bottom.ports["dummy0GS"].center[1])
+        ]
+    )
+    path_component = gf.path.extrude(
+        path,
+        layer = "Metal2drawing",
+        width = connWidth
+    )
+
+    component.add_ref(path_component)
+    path = gf.Path(
+        [
+            device_bottom.ports["dummy1GS"].center,
+            ( component.xmin+0.38/2, device_bottom.ports["dummy0GS"].center[1])
+        ]
+    )
+    path_component = gf.path.extrude(
+        path,
+        layer = "Metal2drawing",
+        width = connWidth
+    )
+    component.add_ref(path_component)
+
+    technology._populate_via_stack(
+        component,
+        tech,
+        column_width=connWidth,
+        row_width=connWidth,
+        center=device_top.ports["dummy0GS"].center,
+    )
+    technology._populate_via_stack(
+        component,
+        tech,
+        column_width=connWidth,
+        row_width=connWidth,
+        center=device_top.ports["dummy1GS"].center,
+    )
+    technology._populate_via_stack(
+        component,
+        tech,
+        column_width=connWidth,
+        row_width=connWidth,
+        center=device_bottom.ports["dummy0GS"].center,
+    )
+    technology._populate_via_stack(
+        component,
+        tech,
+        column_width=connWidth,
+        row_width=connWidth,
+        center=device_bottom.ports["dummy1GS"].center,
+    )
+
+    technology._populate_via_stack(
+        component,
+        tech,
+        column_width=connWidth,
+        row_width=connWidth,
+        center=( component.xmin+0.38/2, device_top.ports["dummy0GS"].center[1]),
+    )
+    technology._populate_via_stack(
+        component,
+        tech,
+        column_width=connWidth,
+        row_width=connWidth,
+        center=( component.xmax-0.38/2, device_top.ports["dummy1GS"].center[1]),
+    )
+    technology._populate_via_stack(
+        component,
+        tech,
+        column_width=connWidth,
+        row_width=connWidth,
+        center=( component.xmin+0.38/2, device_bottom.ports["dummy1GS"].center[1]),
+    )
+    technology._populate_via_stack(
+        component,
+        tech,
+        column_width=connWidth,
+        row_width=connWidth,
+        center=( component.xmax-0.38/2, device_bottom.ports["dummy0GS"].center[1]),
+    )
 
     return component
 

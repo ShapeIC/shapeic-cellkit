@@ -1,0 +1,9 @@
+.subckt {{subckt_name}} DP GP DN GN S B
+*vd vg vs vb
+M1 DP GP S B {{model}} w={{w}}u l={{l}}u ng={{ng}} m={{m}} mm_ok=1
+M2 DN GN S B {{model}} w={{w}}u l={{l}}u ng={{ng}} m={{m}} mm_ok=1
+
+*dummies
+M3 DP B B B {{model}} w={{w_dummy}} l={{l_dummy}} ng={{ng_dummy}} m=1 mm_ok=1
+M4 DN B B B {{model}} w={{w_dummy}} l={{l_dummy}} ng={{ng_dummy}} m=1 mm_ok=1
+.ends {{subckt_name}}
