@@ -256,7 +256,7 @@ class CatalogTests(unittest.TestCase):
             provider = CellKitCatalog.open(
                 ROOT, "gf180mcuD", pdk_root
             ).primitive("simplediffpair").provider
-            implementation = provider._implementation()
+            implementation = provider._technology()
             captured = {}
 
             def factory(**parameters):
@@ -279,7 +279,7 @@ class CatalogTests(unittest.TestCase):
             provider = CellKitCatalog.open(
                 ROOT, "gf180mcuD", pdk_root
             ).primitive("simplediffpair").provider
-            implementation = provider._implementation()
+            implementation = provider._technology()
             captured = {}
 
             def factory(**parameters):
@@ -306,7 +306,7 @@ class CatalogTests(unittest.TestCase):
             provider = CellKitCatalog.open(
                 ROOT, "gf180mcuD", pdk_root
             ).primitive("simplediffpair").provider
-            implementation = provider._implementation()
+            implementation = provider._technology()
 
             _gate_to_diffusion, gate_to_poly, pitch = (
                 implementation._mos_dimensions(0.4, 0.22)
@@ -435,7 +435,7 @@ class CatalogTests(unittest.TestCase):
             provider = CellKitCatalog.open(
                 ROOT, "sky130A", pdk_root
             ).primitive("simplediffpair").provider
-            implementation = provider._implementation()
+            implementation = provider._technology()
             captured = {}
 
             def factory(**parameters):
@@ -460,7 +460,7 @@ class CatalogTests(unittest.TestCase):
             provider = CellKitCatalog.open(
                 ROOT, "sky130A", pdk_root
             ).primitive("simplediffpair").provider
-            implementation = provider._implementation()
+            implementation = provider._technology()
             captured = {}
 
             def factory(**parameters):
@@ -487,7 +487,7 @@ class CatalogTests(unittest.TestCase):
             provider = CellKitCatalog.open(
                 ROOT, "sky130A", pdk_root
             ).primitive("simplediffpair").provider
-            implementation = provider._implementation()
+            implementation = provider._technology()
 
             body = implementation._guard_ring_body_point(0.4, 0.42, 2, 0.275)
             diffusion = implementation._source_drain_centers(0.4, 2)
@@ -677,7 +677,7 @@ class CatalogTests(unittest.TestCase):
             provider = CellKitCatalog.open(
                 ROOT, "ihp-sg13g2", pdk_root
             ).primitive("simplediffpair").provider
-            implementation = provider._implementation()
+            implementation = provider._technology()
             captured = {}
 
             def mos_core(**parameters):
@@ -840,7 +840,7 @@ class CatalogTests(unittest.TestCase):
                         )
 
             implementation = (
-                catalog.primitive("simplediffpair").provider._implementation()
+                catalog.primitive("simplediffpair").provider._technology()
             )
             gf, layer, nfet, _pfet = implementation._backend()
             device = implementation._bussed_mos(
