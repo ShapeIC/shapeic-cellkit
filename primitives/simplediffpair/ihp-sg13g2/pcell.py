@@ -6,6 +6,8 @@ import importlib.util
 from functools import cache
 from pathlib import Path
 
+from kfactory import technology
+
 LAYOUT_POLICY = "symmetric-adjacent-with-edge-dummies-v3"
 IMPLEMENTATION_FILES = (
     Path(__file__).resolve().parents[3] / "technologies/ihp-sg13g2/pcells.py",
@@ -15,7 +17,7 @@ IMPLEMENTATION_FILES = (
 def build(geometry):
     technology = _technology()
     gf, cells, mos_core, tech = technology._backend()
-    component = _simple_diff_pair(
+    component = _simple_diff_pair_cc(
         gf,
         cells,
         mos_core,
@@ -68,6 +70,166 @@ def _simple_diff_pair(gf, cells, mos_core, tech, length, wf, nf):
             "B": technology._point(bulk_ref.ports["TAP"]),
         },
     )
+    return component
+
+def _simple_diff_pair_cc(gf, cells, mos_core, tech, length, wf, nf):
+    technology = _technology()
+    component = gf.Component(technology._cell_name("simplediffpair", length, wf, nf))
+
+    device_sep = 0.2
+    metal1BusWidth = 0.3
+    metal1Sep = 0.2
+
+    device_bottom = technology._interdigitated_mos_devices(gf, "device_bottom", mos_core, tech, "nmos", length, wf, nf)
+    device_top = technology._interdigitated_mos_devices(gf, "device_top", mos_core, tech, "nmos", length, wf, nf) 
+
+    device_bottom.rotate(180)
+    device_bottom.ymin=0
+    device_bottom.xmin=0
+
+    device_top.xmin = 0
+    device_top.ymin = device_bottom.ymax+device_sep
+
+    component.add_ref(device_bottom)
+    component.add_ref(device_top)
+
+    technology._connect_ports_to_bus(
+        component, 
+        tech,
+        ports=[device_bottom.ports["S"], device_top.ports["S"]],
+        offset=(device_bottom.xmax-device_bottom.xmin)/2+metal1Sep+metal1BusWidth/2,
+        verticalConnWidth=0.3,
+        horizontalLayer="Metal2drawing",
+        verticalLayer="Metal1drawing",
+        busWidth=metal1BusWidth,
+        busSide="left",
+        busDirection="Vertical",
+        pinName="S",
+        pinLayer="Metal1pin",
+        pinTextLayer="Metal1text"
+    )
+    technology._connect_ports_to_bus(
+        component, 
+        tech,
+        ports=[device_bottom.ports["DA"], device_top.ports["DB"]],
+        offset=(device_bottom.xmax-device_bottom.xmin)/2+metal1Sep+metal1BusWidth/2+metal1Sep+metal1BusWidth,
+        verticalConnWidth=0.3,
+        horizontalLayer="Metal2drawing",
+        verticalLayer="Metal1drawing",
+        busWidth=metal1BusWidth,
+        busSide="left",
+        busDirection="Vertical",
+        pinName="DP",
+        pinLayer="Metal1pin",
+        pinTextLayer="Metal1text"
+    )
+    technology._connect_ports_to_bus(
+        component, 
+        tech,
+        ports=[device_bottom.ports["DB"], device_top.ports["DA"]],
+        offset=(device_bottom.xmax-device_bottom.xmin)/2+metal1Sep+metal1BusWidth/2,
+        verticalConnWidth=0.3,
+        horizontalLayer="Metal2drawing",
+        verticalLayer="Metal1drawing",
+        busWidth=metal1BusWidth,
+        busSide="right",
+        busDirection="Vertical",
+        pinName="DN",
+        pinLayer="Metal1pin",
+        pinTextLayer="Metal1text"
+    )
+
+    connWidth = 0.3
+    path = gf.Path(
+        [
+            (device_bottom.ports["GA"].center[0]- device_bottom.ports["GA"].width/2+connWidth/2, device_bottom.ports["GA"].center[1]),
+            (device_bottom.ports["GA"].center[0]- device_bottom.ports["GA"].width/2+connWidth/2, device_top.ports["GB"].center[1]),
+        ]
+    )
+    path_component = gf.path.extrude(
+        path,
+        layer = "Metal2drawing",
+        width = connWidth
+    )
+    component.add_ref(path_component)
+    component.add_port(
+        name="GN",
+        center=(device_bottom.ports["GA"].center[0]- device_bottom.ports["GA"].width/2+connWidth/2, device_bottom.ports["GA"].center[1]),
+        width=0.3,
+        orientation=90,
+        layer="Metal2pin"
+    )
+    component.add_label(text="GN", position=(device_bottom.ports["GA"].center[0]- device_bottom.ports["GA"].width/2+connWidth/2, device_bottom.ports["GA"].center[1]), layer="Metal2text")
+
+    path = gf.Path(
+        [
+            (device_top.ports["GA"].center[0]+device_top.ports["GA"].width/2-connWidth/2, device_top.ports["GA"].center[1]),
+            (device_top.ports["GA"].center[0]+device_top.ports["GA"].width/2-connWidth/2, device_bottom.ports["GB"].center[1]),
+        ]
+    )
+    path_component = gf.path.extrude(
+        path,
+        layer = "Metal2drawing",
+        width = connWidth
+    )
+    component.add_ref(path_component)
+    component.add_port(
+        name="GP",
+        center=(device_top.ports["GA"].center[0]+device_top.ports["GA"].width/2-connWidth/2, device_top.ports["GA"].center[1]),
+        width=0.3,
+        orientation=90,
+        layer="Metal2pin"
+    )
+    component.add_label(text="GP", position=(device_top.ports["GA"].center[0]+device_top.ports["GA"].width/2-connWidth/2, device_top.ports["GA"].center[1]), layer="Metal2text")
+
+    technology._populate_via_stack(
+        component,
+        tech,
+        column_width=connWidth,
+        row_width=connWidth,
+        center=(device_bottom.ports["GA"].center[0]- device_bottom.ports["GA"].width/2+connWidth/2, device_bottom.ports["GA"].center[1]),
+    )
+    technology._populate_via_stack(
+        component,
+        tech,
+        column_width=connWidth,
+        row_width=connWidth,
+        center=(device_bottom.ports["GA"].center[0]- device_bottom.ports["GA"].width/2+connWidth/2, device_top.ports["GB"].center[1]),
+    )
+    technology._populate_via_stack(
+        component,
+        tech,
+        column_width=connWidth,
+        row_width=connWidth,
+        center=(device_top.ports["GA"].center[0]+device_top.ports["GA"].width/2-connWidth/2, device_top.ports["GA"].center[1]),
+    )
+    technology._populate_via_stack(
+        component,
+        tech,
+        column_width=connWidth,
+        row_width=connWidth,
+        center=(device_top.ports["GA"].center[0]+device_top.ports["GA"].width/2-connWidth/2, device_bottom.ports["GB"].center[1]),
+    )
+
+    guard_bbox = (
+        (component.xmin, component.ymin),
+        (component.xmax, component.ymax),
+    )
+    component.add_ref(cells.guard_ring(
+        width=0.32,
+        guardRingSpacing=0.22,
+        bbox=guard_bbox
+    ))
+
+    component.add_port(
+        name="B",
+        center=((component.xmin+component.xmax)/2, component.ymin + 0.32/2),
+        width=0.32,
+        orientation=0,
+        layer="Metal1pin"
+    )
+    component.add_label(text="B", position=((component.xmin+component.xmax)/2, component.ymin + 0.32/2), layer="Metal1text")
+
     return component
 
 
