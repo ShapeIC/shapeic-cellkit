@@ -7,3 +7,4 @@ IHP
 .python-version
 **/drc_run_**
 **/*.gds
+build/
