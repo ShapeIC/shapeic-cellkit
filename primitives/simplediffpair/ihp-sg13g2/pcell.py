@@ -282,33 +282,17 @@ def _simple_diff_pair_cc(gf, cells, mos_core, tech, length, wf, nf):
     )
     component.add_ref(path_component)
 
-    technology._populate_via_stack(
+    technology._populate_ports_via_stack(
         component,
         tech,
+        ports=[
+            device_top.ports["dummy0GS"], 
+            device_top.ports["dummy1GS"], 
+            device_bottom.ports["dummy0GS"], 
+            device_bottom.ports["dummy1GS"]
+        ],
         column_width=connWidth,
         row_width=connWidth,
-        center=device_top.ports["dummy0GS"].center,
-    )
-    technology._populate_via_stack(
-        component,
-        tech,
-        column_width=connWidth,
-        row_width=connWidth,
-        center=device_top.ports["dummy1GS"].center,
-    )
-    technology._populate_via_stack(
-        component,
-        tech,
-        column_width=connWidth,
-        row_width=connWidth,
-        center=device_bottom.ports["dummy0GS"].center,
-    )
-    technology._populate_via_stack(
-        component,
-        tech,
-        column_width=connWidth,
-        row_width=connWidth,
-        center=device_bottom.ports["dummy1GS"].center,
     )
 
     technology._populate_via_stack(

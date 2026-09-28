@@ -851,4 +851,22 @@ def _connect_diff_to_gate(
             layer=pinLayer
         )
 
-
+def _populate_ports_via_stack(
+    component,
+    tech,
+    ports,
+    column_width=10.0,
+    row_width=10.0,
+    bottom_layer="Metal1",
+    top_layer="Metal2"
+):
+    for port in ports:
+        _populate_via_stack(
+            component,
+            tech,
+            column_width,
+            row_width,
+            port.center,
+            bottom_layer,
+            top_layer
+        )
