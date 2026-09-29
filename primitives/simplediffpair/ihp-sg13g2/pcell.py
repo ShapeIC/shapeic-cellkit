@@ -201,14 +201,12 @@ def _simple_diff_pair_cc(gf, cells, mos_core, tech, length, wf, nf):
         bbox=guard_bbox
     ))
 
-    component.add_port(
-        name="B",
+    technology._add_port(
+        component,
+        pinName="B",
         center=((component.xmin+component.xmax)/2, component.ymin + 0.38/2),
         width=0.32,
-        orientation=0,
-        layer="Metal1pin"
     )
-    component.add_label(text="B", position=((component.xmin+component.xmax)/2, component.ymin + 0.38/2), layer="Metal1text")
 
     technology._add_segment(
         component,

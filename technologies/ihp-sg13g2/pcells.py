@@ -923,4 +923,23 @@ def _segment_direction(path, tolerance=1e-9):
         return "vertical"
     return "diagonal"
 
+def _add_port(
+    component,
+    pinName,
+    center,
+    width,
+    orientation=0,
+    pinLayer="Metal1pin",
+    pinTextLayer="Metal1text"
+):
 
+    import gdsfactory as gf
+    component.add_port(
+        name=pinName,
+        center=center,
+        width=width,
+        orientation=0,
+        layer=pinLayer
+    )
+    if pinTextLayer!=None:
+        component.add_label(text=pinName, position=center, layer=pinTextLayer)
