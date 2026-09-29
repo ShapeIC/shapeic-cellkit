@@ -140,47 +140,27 @@ def _simple_diff_pair_cc(gf, cells, mos_core, tech, length, wf, nf):
     )
 
     connWidth = 0.3
-    path = gf.Path(
-        [
-            (device_bottom.ports["GA"].center[0]- device_bottom.ports["GA"].width/2+connWidth/2, device_bottom.ports["GA"].center[1]),
-            (device_bottom.ports["GA"].center[0]- device_bottom.ports["GA"].width/2+connWidth/2, device_top.ports["GB"].center[1]),
-        ]
+    technology._add_segment(
+        component,
+        start=(device_bottom.ports["GA"].center[0]- device_bottom.ports["GA"].width/2+connWidth/2, device_bottom.ports["GA"].center[1]),
+        end=(device_bottom.ports["GA"].center[0]- device_bottom.ports["GA"].width/2+connWidth/2, device_top.ports["GB"].center[1]),
+        width=connWidth,
+        layer="Metal2drawing",
+        pinName="GN",
+        pinLayer="Metal2pin",
+        pinTextLayer="Metal2text"
     )
-    path_component = gf.path.extrude(
-        path,
-        layer = "Metal2drawing",
-        width = connWidth
-    )
-    component.add_ref(path_component)
-    component.add_port(
-        name="GN",
-        center=(device_bottom.ports["GA"].center[0]- device_bottom.ports["GA"].width/2+connWidth/2, device_bottom.ports["GA"].center[1]),
-        width=0.3,
-        orientation=90,
-        layer="Metal2pin"
-    )
-    component.add_label(text="GN", position=(device_bottom.ports["GA"].center[0]- device_bottom.ports["GA"].width/2+connWidth/2, device_bottom.ports["GA"].center[1]), layer="Metal2text")
 
-    path = gf.Path(
-        [
-            (device_top.ports["GA"].center[0]+device_top.ports["GA"].width/2-connWidth/2, device_top.ports["GA"].center[1]),
-            (device_top.ports["GA"].center[0]+device_top.ports["GA"].width/2-connWidth/2, device_bottom.ports["GB"].center[1]),
-        ]
+    technology._add_segment(
+        component,
+        start=(device_top.ports["GA"].center[0]+device_top.ports["GA"].width/2-connWidth/2, device_top.ports["GA"].center[1]),
+        end=(device_top.ports["GA"].center[0]+device_top.ports["GA"].width/2-connWidth/2, device_bottom.ports["GB"].center[1]),
+        width=connWidth,
+        layer="Metal2drawing",
+        pinName="GP",
+        pinLayer="Metal2pin",
+        pinTextLayer="Metal2text"
     )
-    path_component = gf.path.extrude(
-        path,
-        layer = "Metal2drawing",
-        width = connWidth
-    )
-    component.add_ref(path_component)
-    component.add_port(
-        name="GP",
-        center=(device_top.ports["GA"].center[0]+device_top.ports["GA"].width/2-connWidth/2, device_top.ports["GA"].center[1]),
-        width=0.3,
-        orientation=90,
-        layer="Metal2pin"
-    )
-    component.add_label(text="GP", position=(device_top.ports["GA"].center[0]+device_top.ports["GA"].width/2-connWidth/2, device_top.ports["GA"].center[1]), layer="Metal2text")
 
     technology._populate_via_stack(
         component,
@@ -230,57 +210,37 @@ def _simple_diff_pair_cc(gf, cells, mos_core, tech, length, wf, nf):
     )
     component.add_label(text="B", position=((component.xmin+component.xmax)/2, component.ymin + 0.38/2), layer="Metal1text")
 
-    path = gf.Path(
-        [
-            device_top.ports["dummy0GS"].center,
-            ( component.xmin+0.38/2, device_top.ports["dummy0GS"].center[1])
-        ]
-    )
-    path_component = gf.path.extrude(
-        path,
-        layer = "Metal2drawing",
-        width = connWidth
+    technology._add_segment(
+        component,
+        start=device_top.ports["dummy0GS"].center,
+        end=(component.xmin+0.38/2, device_top.ports["dummy0GS"].center[1]),
+        width=connWidth,
+        layer="Metal2drawing"
     )
 
-    component.add_ref(path_component)
-    path = gf.Path(
-        [
-            device_top.ports["dummy1GS"].center,
-            ( component.xmax-0.38/2, device_top.ports["dummy0GS"].center[1])
-        ]
-    )
-    path_component = gf.path.extrude(
-        path,
-        layer = "Metal2drawing",
-        width = connWidth
-    )
-    component.add_ref(path_component)
-
-    path = gf.Path(
-        [
-            device_bottom.ports["dummy0GS"].center,
-            ( component.xmax-0.38/2, device_bottom.ports["dummy0GS"].center[1])
-        ]
-    )
-    path_component = gf.path.extrude(
-        path,
-        layer = "Metal2drawing",
-        width = connWidth
+    technology._add_segment(
+        component,
+        start=device_top.ports["dummy1GS"].center,
+        end=(component.xmax-0.38/2, device_top.ports["dummy0GS"].center[1]),
+        width=connWidth,
+        layer="Metal2drawing"
     )
 
-    component.add_ref(path_component)
-    path = gf.Path(
-        [
-            device_bottom.ports["dummy1GS"].center,
-            ( component.xmin+0.38/2, device_bottom.ports["dummy0GS"].center[1])
-        ]
+    technology._add_segment(
+        component,
+        start=device_bottom.ports["dummy0GS"].center,
+        end=(component.xmax-0.38/2, device_bottom.ports["dummy0GS"].center[1]),
+        width=connWidth,
+        layer="Metal2drawing"
     )
-    path_component = gf.path.extrude(
-        path,
-        layer = "Metal2drawing",
-        width = connWidth
+
+    technology._add_segment(
+        component,
+        start=device_bottom.ports["dummy1GS"].center,
+        end=(component.xmin+0.38/2, device_bottom.ports["dummy0GS"].center[1]),
+        width=connWidth,
+        layer="Metal2drawing"
     )
-    component.add_ref(path_component)
 
     technology._populate_ports_via_stack(
         component,

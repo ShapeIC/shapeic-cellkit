@@ -870,3 +870,57 @@ def _populate_ports_via_stack(
             bottom_layer,
             top_layer
         )
+
+def _add_segment(component, start, end, *, width, layer, pinName=None, pinLayer=None,
+                 pinTextLayer=None):
+    import gdsfactory as gf
+
+    path = gf.Path([start, end])
+    segment = gf.path.extrude(path, width=width, layer=layer)
+    component.add_ref(segment)
+
+    segment_direction = _segment_direction(path)
+
+    if pinName!=None:
+        if segment_direction=="horizontal":
+            segment = gf.path.extrude(path, width=width, layer=pinLayer)
+            component.add_ref(segment)
+            component.add_port(
+                name=pinName,
+                center=((start[0]+end[0])/2, (start[1]+end[1])/2),
+                width=abs(start[0]-end[0]),
+                orientation=0,
+                layer=pinLayer
+            )
+            if pinTextLayer!=None:
+                component.add_label(text=pinName, position=((start[0]+end[0])/2, (start[1]+end[1])/2), layer=pinTextLayer)
+        if segment_direction=="vertical":
+            segment = gf.path.extrude(path, width=width, layer=pinLayer)
+            component.add_ref(segment)
+            component.add_port(
+                name=pinName,
+                center=((start[0]+end[0])/2, (start[1]+end[1])/2),
+                width=abs(start[1]-end[1]),
+                orientation=90,
+                layer=pinLayer
+            )
+            if pinTextLayer!=None:
+                component.add_label(text=pinName, position=((start[0]+end[0])/2, (start[1]+end[1])/2), layer=pinTextLayer)
+
+def _segment_direction(path, tolerance=1e-9):
+    if len(path.points) != 2:
+        raise ValueError("Se requiere un path de exactamente dos puntos")
+
+    (x1, y1), (x2, y2) = path.points
+    dx = abs(x2 - x1)
+    dy = abs(y2 - y1)
+
+    if dx <= tolerance and dy <= tolerance:
+        raise ValueError("El segmento tiene longitud cero")
+    if dy <= tolerance:
+        return "horizontal"
+    if dx <= tolerance:
+        return "vertical"
+    return "diagonal"
+
+
