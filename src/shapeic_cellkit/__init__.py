@@ -4,6 +4,7 @@ from .catalog import CellKitCatalog
 from .drc import DrcResult, run_drc
 from .lvs import LvsResult, run_lvs
 from .contracts import (
+    GeometryLimits,
     MacroLayout,
     MacroNet,
     MagicTechnology,
@@ -15,6 +16,7 @@ from .contracts import (
 )
 from .errors import (
     CellKitError,
+    GeometryConstraintError,
     InvalidCellKitRootError,
     InvalidPdkNameError,
     MacroLayoutNotFoundError,
@@ -31,6 +33,8 @@ from .validation import PrimitiveDescriptor, load_primitive_descriptor
 __all__ = [
     "CellKitCatalog",
     "CellKitError",
+    "GeometryConstraintError",
+    "GeometryLimits",
     "InvalidCellKitRootError",
     "InvalidPdkNameError",
     "LvsResult",

@@ -11,7 +11,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
-from .contracts import MacroNet, MagicTechnology, MacroLayout, PrimitiveLayout
+from .contracts import GeometryLimits, MacroNet, MagicTechnology, MacroLayout, PrimitiveLayout
 from .errors import (
     InvalidCellKitRootError,
     InvalidPdkNameError,
@@ -24,7 +24,7 @@ from .errors import (
     TechnologyLoadError,
     TechnologyNotFoundError,
 )
-from .validation import load_primitive_descriptor
+from .validation import load_geometry_limits, load_primitive_descriptor
 
 
 class CellKitCatalog:
@@ -158,6 +158,15 @@ class CellKitCatalog:
             raise PrimitiveNotFoundError(f"unknown primitive '{name}'") from error
         return load_primitive_descriptor(manifest_path)
 
+    def primitive_geometry_limits(self, name: str) -> GeometryLimits | None:
+        """Return optional limits for this PDK without importing its PCell."""
+
+        try:
+            manifest_path = self._primitive_paths[name]
+        except KeyError as error:
+            raise PrimitiveNotFoundError(f"unknown primitive '{name}'") from error
+        return load_geometry_limits(manifest_path.parent / self._pdk / "geometry.json")
+
     def primitive_descriptor_for_lut(self, lut_primitive: str):
         """Resolve the unique catalog primitive that publishes a LUT name."""
 
@@ -183,8 +192,10 @@ class CellKitCatalog:
 
     def primitive(self, name: str) -> PrimitiveLayout:
         descriptor = self.primitive_descriptor(name)
+        limits = self.primitive_geometry_limits(name)
         manifest_path = self._primitive_paths[name]
         provider_path = manifest_path.parent / self._pdk / "pcell.py"
+        geometry_path = provider_path.with_name("geometry.json")
         if not provider_path.is_file():
             raise ProviderNotFoundError(
                 f"primitive '{name}' has no PCell provider for PDK '{self._pdk}'"
@@ -202,8 +213,10 @@ class CellKitCatalog:
             branches=descriptor.branches,
             provider=provider,
             implementation_digest=_provider_digest(
-                provider_path, provider, self._root
+                provider_path, provider, self._root,
+                (geometry_path,) if geometry_path.is_file() else (),
             ),
+            geometry_limits=limits,
         )
 
     def macro_layout(self, name: str) -> MacroLayout:
@@ -225,6 +238,8 @@ class CellKitCatalog:
             )
         instances = []
         instance_ports: dict[str, set[str]] = {}
+        instance_limits = []
+        geometry_paths = []
         for instance, primitive in raw_instances.items():
             if not isinstance(instance, str) or not instance or not isinstance(primitive, str) or not primitive:
                 raise ManifestValidationError(
@@ -235,6 +250,12 @@ class CellKitCatalog:
                     f"macro layout '{manifest_path}' references unknown primitive '{primitive}'"
                 )
             instances.append((instance, primitive))
+            limits = self.primitive_geometry_limits(primitive)
+            if limits is not None:
+                instance_limits.append((instance, primitive, limits))
+                geometry_paths.append(
+                    self._primitive_paths[primitive].parent / self._pdk / "geometry.json"
+                )
             instance_ports[instance] = set(
                 self.primitive_descriptor(primitive).port_order
             )
@@ -252,8 +273,9 @@ class CellKitCatalog:
             nets=nets,
             provider=provider,
             implementation_digest=_provider_digest(
-                provider_path, provider, self._root
+                provider_path, provider, self._root, tuple(geometry_paths)
             ),
+            instance_geometry_limits=tuple(instance_limits),
         )
 
     @staticmethod
@@ -413,7 +435,9 @@ def _load_provider(path: Path, context: str) -> ModuleType:
         ) from error
 
 
-def _provider_digest(path: Path, provider: ModuleType, root: Path) -> str:
+def _provider_digest(
+    path: Path, provider: ModuleType, root: Path, extra_files: tuple[Path, ...] = ()
+) -> str:
     files = [path]
     additional = getattr(provider, "IMPLEMENTATION_FILES", ())
     if not isinstance(additional, tuple) or any(
@@ -423,6 +447,7 @@ def _provider_digest(path: Path, provider: ModuleType, root: Path) -> str:
             f"PCell provider '{path}' IMPLEMENTATION_FILES must be a tuple of Paths"
         )
     files.extend(additional)
+    files.extend(extra_files)
     digest = hashlib.sha256()
     for implementation in files:
         if not implementation.is_file():

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .contracts import MosPolarity, PhysicalMosBranch
+from .contracts import GeometryLimits, MosPolarity, PhysicalMosBranch
 from .errors import ManifestValidationError
 
 
@@ -19,6 +20,49 @@ class PrimitiveDescriptor:
     operating_point_branch: str
     port_order: tuple[str, ...]
     branches: tuple[PhysicalMosBranch, ...]
+
+
+def load_geometry_limits(path: Path) -> GeometryLimits | None:
+    """Read optional PDK-specific limits without importing the PCell provider."""
+
+    if not path.exists():
+        return None
+    if not path.is_file():
+        raise ManifestValidationError(f"geometry limits '{path}' must be a file")
+    try:
+        raw = json.loads(
+            path.read_text(encoding="utf-8"), object_pairs_hook=_unique_object
+        )
+    except (OSError, json.JSONDecodeError) as error:
+        raise ManifestValidationError(
+            f"could not load geometry limits '{path}': {error}"
+        ) from error
+    if (
+        not isinstance(raw, dict)
+        or not raw
+        or set(raw) - {"required_nf", "max_finger_width_m"}
+    ):
+        raise ManifestValidationError(
+            f"geometry limits '{path}' must contain only required_nf and/or max_finger_width_m"
+        )
+    required_nf = raw.get("required_nf")
+    max_width = raw.get("max_finger_width_m")
+    if "required_nf" in raw and (
+        isinstance(required_nf, bool) or not isinstance(required_nf, int) or required_nf < 1
+    ):
+        raise ManifestValidationError(
+            f"geometry limits '{path}' required_nf must be a positive integer"
+        )
+    if "max_finger_width_m" in raw and (
+        isinstance(max_width, bool)
+        or not isinstance(max_width, (int, float))
+        or not math.isfinite(max_width)
+        or max_width <= 0
+    ):
+        raise ManifestValidationError(
+            f"geometry limits '{path}' max_finger_width_m must be positive and finite"
+        )
+    return GeometryLimits(required_nf=required_nf, max_finger_width_m=max_width)
 
 
 def load_primitive_descriptor(path: Path) -> PrimitiveDescriptor:

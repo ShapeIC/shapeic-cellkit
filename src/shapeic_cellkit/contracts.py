@@ -8,7 +8,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Mapping, Protocol, runtime_checkable
 
-from .errors import ProviderContractError
+from .errors import GeometryConstraintError, ProviderContractError
 
 
 class MosPolarity(str, Enum):
@@ -39,6 +39,33 @@ class PrimitiveGeometry:
         """Return the complete active width ``Wf * nf``."""
 
         return self.finger_width_m * self.nf
+
+
+@dataclass(frozen=True)
+class GeometryLimits:
+    """Simple limits declared by one PDK-specific PCell."""
+
+    required_nf: int | None = None
+    max_finger_width_m: float | None = None
+
+    def validate(
+        self, geometry: PrimitiveGeometry, primitive: str, instance: str | None = None
+    ) -> None:
+        target = f"primitive '{primitive}'"
+        if instance is not None:
+            target += f" instance '{instance}'"
+        if self.required_nf is not None and geometry.nf != self.required_nf:
+            raise GeometryConstraintError(
+                f"{target} requires nf={self.required_nf}, received nf={geometry.nf}"
+            )
+        if (
+            self.max_finger_width_m is not None
+            and geometry.finger_width_m > self.max_finger_width_m
+        ):
+            raise GeometryConstraintError(
+                f"{target} requires finger_width_m <= {self.max_finger_width_m}, "
+                f"received {geometry.finger_width_m}"
+            )
 
 
 @dataclass(frozen=True)
@@ -146,8 +173,11 @@ class PrimitiveLayout:
     branches: tuple[PhysicalMosBranch, ...]
     provider: PrimitivePCellProvider
     implementation_digest: str
+    geometry_limits: GeometryLimits | None = None
 
     def render(self, geometry: PrimitiveGeometry) -> RenderedCell:
+        if self.geometry_limits is not None:
+            self.geometry_limits.validate(geometry, self.catalog_name)
         component = self.provider.build(geometry)
         cell_name = _component_name(component)
         found_ports = _component_port_names(component)
@@ -189,6 +219,7 @@ class MacroLayout:
     nets: tuple[MacroNet, ...]
     provider: MacroPCellProvider
     implementation_digest: str
+    instance_geometry_limits: tuple[tuple[str, str, GeometryLimits], ...] = ()
 
     def render(
         self, instances: Mapping[str, PrimitiveGeometry]
@@ -199,6 +230,8 @@ class MacroLayout:
                 f"macro '{self.name}' geometry instances must be "
                 f"{sorted(expected_instances)}, found {sorted(instances)}"
             )
+        for instance, primitive, limits in self.instance_geometry_limits:
+            limits.validate(instances[instance], primitive, instance)
         component = self.provider.build(instances)
         found_ports = _component_port_names(component)
         expected_ports = set(self.port_order)

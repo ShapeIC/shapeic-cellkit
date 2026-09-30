@@ -43,5 +43,9 @@ class ManifestValidationError(CellKitError):
     """A primitive or macro layout manifest is structurally invalid."""
 
 
+class GeometryConstraintError(CellKitError, ValueError):
+    """A requested geometry violates a PCell's declared limits."""
+
+
 class ProviderContractError(CellKitError):
     """A dynamically loaded provider does not implement the public contract."""
