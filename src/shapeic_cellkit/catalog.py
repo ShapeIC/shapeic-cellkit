@@ -170,9 +170,13 @@ class CellKitCatalog:
     def primitive_descriptor_for_lut(self, lut_primitive: str):
         """Resolve the unique catalog primitive that publishes a LUT name."""
 
-        descriptors = (
-            self.primitive_descriptor(name) for name in self.primitive_names()
-        )
+        descriptors = []
+        for name in self.primitive_names():
+            manifest_path = self._primitive_paths[name]
+            raw = _load_json_object(manifest_path)
+            if "physical_model" not in raw:
+                continue
+            descriptors.append(load_primitive_descriptor(manifest_path))
         matches = [
             descriptor
             for descriptor in descriptors

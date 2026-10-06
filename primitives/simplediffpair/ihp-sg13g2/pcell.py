@@ -206,6 +206,7 @@ def _simple_diff_pair_cc(gf, cells, mos_core, tech, length, wf, nf):
         pinName="B",
         center=((component.xmin+component.xmax)/2, component.ymin + 0.38/2),
         width=0.32,
+        length=0.32
     )
 
     technology._add_segment(
@@ -281,6 +282,8 @@ def _simple_diff_pair_cc(gf, cells, mos_core, tech, length, wf, nf):
         row_width=connWidth,
         center=( component.xmax-0.38/2, device_bottom.ports["dummy0GS"].center[1]),
     )
+
+    component.flatten()
 
     return component
 
