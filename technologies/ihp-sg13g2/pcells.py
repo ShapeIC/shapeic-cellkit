@@ -251,7 +251,7 @@ def _bussed_mos_device(gf, mos_core, tech, kind, length, wf, nf):
 
 def _interdigitated_mos_devices(gf, cell_name, mos_core, tech, kind, length, wf, nf):
     raw = _ihp_mos_device(mos_core, tech, kind, length, wf, nf+2) #+2 for dummys
-    component = gf.Component(cell_name)
+    component = gf.Component(_cell_name(f"{cell_name}_{kind}", length, wf, nf))
     component.add_ref(raw)
     
     metal1BusWidth = 0.3
@@ -928,12 +928,14 @@ def _add_port(
     pinName,
     center,
     width,
+    length,
     orientation=0,
     pinLayer="Metal1pin",
     pinTextLayer="Metal1text"
 ):
 
     import gdsfactory as gf
+    
     component.add_port(
         name=pinName,
         center=center,
@@ -943,3 +945,14 @@ def _add_port(
     )
     if pinTextLayer!=None:
         component.add_label(text=pinName, position=center, layer=pinTextLayer)
+
+    if orientation==0:
+        component.add_polygon(
+            [
+                (center[0] - width/2, center[1] - length/2),
+                (center[0] + width/2, center[1] - length/2),
+                (center[0] + width/2, center[1] + length/2),
+                (center[0] - width/2, center[1] + length/2),
+            ],
+            layer=pinLayer,
+        )
