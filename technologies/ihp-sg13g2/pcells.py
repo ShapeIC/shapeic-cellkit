@@ -57,8 +57,9 @@ def _ota_4t(gf, tech, diff_cell, mirror_cell, diff_geometry, mirror_geometry):
         diff_dn[0],
         mirror_dref[0],
     ) + 1.0
-    vout = (left_x, (diff_dp[1] + mirror_dout[1]) / 2.0)
-    internal = (right_x, (diff_dn[1] + mirror_dref[1]) / 2.0)
+    route_y = float(diff.dbbox().top) + 2.0
+    vout = (left_x, route_y)
+    internal = (right_x, route_y)
     for terminal in (diff_dp, diff_dn, mirror_dout, mirror_dref, vout):
         _add_metal1_metal2_via(component, tech, terminal)
     for terminal in (diff_dp, mirror_dout):
@@ -242,7 +243,7 @@ def _bussed_mos_device(gf, mos_core, tech, kind, length, wf, nf):
     component.add_port(
         name="G",
         center=(contact_x, gate_bus_y),
-        width=contact_pad_size,
+        width=_even_dbu_port_width(component, contact_pad_size),
         orientation=180,
         layer="Metal1pin",
         port_type="electrical",
@@ -632,7 +633,7 @@ def _connect_ports_to_bus(
         c.add_port(
             name=pinName,
             center=((min(xs)+max(xs))/2, bus_y),
-            width=max(xs)-min(xs)+verticalConnWidth,
+            width=_even_dbu_port_width(c, max(xs)-min(xs)+verticalConnWidth),
             orientation=0,
             layer=pinLayer
         )
@@ -652,10 +653,16 @@ def _connect_ports_to_bus(
         c.add_port(
             name=pinName,
             center=(bus_x, (min(ys)+max(ys))/2),
-            width=max(ys)-min(ys)+busWidth,
+            width=_even_dbu_port_width(c, max(ys)-min(ys)+busWidth),
             orientation=90,
             layer=pinLayer
         )
+
+
+def _even_dbu_port_width(component, width):
+    # KFactory requires port widths to occupy an even number of DBUs.
+    dbu_count = math.ceil(width / component.kcl.dbu - 1e-9)
+    return (dbu_count + dbu_count % 2) * component.kcl.dbu
 
 def _via_stack_layers(first_layer, second_layer):
     # Los nombres de dibujo se convierten a los nombres usados por via_stack.
@@ -826,7 +833,7 @@ def _connect_diff_to_gate(
         c.add_port(
             name=pinName,
             center=((min(xs)+max(xs))/2, bus_y),
-            width=max(xs)-min(xs)+busWidth,
+            width=_even_dbu_port_width(c, max(xs)-min(xs)+busWidth),
             orientation=0,
             layer=pinLayer
         )
@@ -846,7 +853,7 @@ def _connect_diff_to_gate(
         c.add_port(
             name=pinName,
             center=(bus_x, (min(ys)+max(ys))/2),
-            width=max(ys)-min(ys)+busWidth,
+            width=_even_dbu_port_width(c, max(ys)-min(ys)+busWidth),
             orientation=90,
             layer=pinLayer
         )
@@ -888,7 +895,7 @@ def _add_segment(component, start, end, *, width, layer, pinName=None, pinLayer=
             component.add_port(
                 name=pinName,
                 center=((start[0]+end[0])/2, (start[1]+end[1])/2),
-                width=abs(start[0]-end[0]),
+                width=_even_dbu_port_width(component, abs(start[0]-end[0])),
                 orientation=0,
                 layer=pinLayer
             )
@@ -900,7 +907,7 @@ def _add_segment(component, start, end, *, width, layer, pinName=None, pinLayer=
             component.add_port(
                 name=pinName,
                 center=((start[0]+end[0])/2, (start[1]+end[1])/2),
-                width=abs(start[1]-end[1]),
+                width=_even_dbu_port_width(component, abs(start[1]-end[1])),
                 orientation=90,
                 layer=pinLayer
             )
@@ -939,7 +946,7 @@ def _add_port(
     component.add_port(
         name=pinName,
         center=center,
-        width=width,
+        width=_even_dbu_port_width(component, width),
         orientation=0,
         layer=pinLayer
     )
