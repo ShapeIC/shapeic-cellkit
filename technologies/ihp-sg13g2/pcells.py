@@ -1,4 +1,4 @@
-"""Shared ihp-sg13g2 device/routing helpers and OTA assembly."""
+"""Shared ihp-sg13g2 device/routing helpers."""
 
 from __future__ import annotations
 
@@ -10,84 +10,6 @@ IHP_ROUTE_WIDTH_UM = 0.3
 IHP_GATE_POLY_OVERLAP_UM = 0.02
 IHP_BUS_CLEARANCE_UM = 0.2
 LAYOUT_POLICY = "symmetric-adjacent-with-edge-dummies-v3"
-
-
-def build_ota_4t(instances, diff_cell, mirror_cell):
-    """Route the OTA using components built by its primitive providers."""
-    gf, _cells, _mos_core, tech = _backend()
-    diff_geometry = instances["xdp"]
-    mirror_geometry = instances["xcm"]
-    component = _ota_4t(gf, tech, diff_cell, mirror_cell, diff_geometry, mirror_geometry)
-    _validate_external_port_isolation(
-        component, gf.kdb, ("VOUT", "VINP", "VINN", "IBIAS", "VDD", "VSS")
-    )
-    return component
-
-
-def _ota_4t(gf, tech, diff_cell, mirror_cell, diff_geometry, mirror_geometry):
-    name = (
-        f"ota_4t_ldp{diff_geometry.length_m * 1e6:.3f}"
-        f"_wdp{diff_geometry.finger_width_m * 1e6:.3f}_ndp{diff_geometry.nf}"
-        f"_lcm{mirror_geometry.length_m * 1e6:.3f}"
-        f"_wcm{mirror_geometry.finger_width_m * 1e6:.3f}_ncm{mirror_geometry.nf}"
-    ).replace(".", "p")
-    component = gf.Component(name)
-    diff = component.add_ref(diff_cell)
-    mirror = component.add_ref(mirror_cell)
-    mirror.move(
-        (
-            0.0,
-            float(diff.dbbox().top) - float(mirror.dbbox().bottom) + 1.0,
-        )
-    )
-
-    diff_dp = (_point(diff.ports["DP"])[0], _point(diff.ports["DP"])[1]+diff.ports["DP"].width/2-0.3/2)
-    diff_dn = (_point(diff.ports["DN"])[0], _point(diff.ports["DN"])[1]+diff.ports["DN"].width/2-0.3/2)
-    mirror_dout = _point(mirror.ports["DOUT"])
-    mirror_dref = _point(mirror.ports["DREF"])
-    left_x = min(
-        float(diff.dbbox().left),
-        float(mirror.dbbox().left),
-        diff_dp[0],
-        mirror_dout[0],
-    ) - 0.5
-    right_x = max(
-        float(diff.dbbox().right),
-        float(mirror.dbbox().right),
-        diff_dn[0],
-        mirror_dref[0],
-    ) + 0.5
-    route_y = float(diff.dbbox().top) + 0.5
-    vout = (left_x, route_y)
-    internal = (right_x, route_y)
-    for terminal in (diff_dp, diff_dn, mirror_dout, mirror_dref, vout):
-        _populate_via_stack(
-            component, 
-            tech,
-            row_width=0.3,
-            column_width=0.3,
-            center=terminal
-        )
-    for terminal in (diff_dp, mirror_dout):
-        _wire(component, terminal, vout, layer="Metal2drawing")
-    for terminal in (diff_dn, mirror_dref):
-        _wire(component, terminal, internal, layer="Metal2drawing")
-
-    mirror_source = _point(mirror.ports["S"])
-    mirror_bulk = _point(mirror.ports["B"])
-    _wire(component, mirror_source, mirror_bulk)
-    _add_external_ports(
-        component,
-        {
-            "VOUT": vout,
-            "VINP": _point(diff.ports["GP"]),
-            "VINN": _point(diff.ports["GN"]),
-            "IBIAS": _point(diff.ports["S"]),
-            "VDD": mirror_bulk,
-            "VSS": _point(diff.ports["B"]),
-        },
-    )
-    return component
 
 
 def _backend():

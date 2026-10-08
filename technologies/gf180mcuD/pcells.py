@@ -1,4 +1,4 @@
-"""Shared gf180mcuD device/routing helpers and OTA assembly."""
+"""Shared gf180mcuD device/routing helpers."""
 
 from __future__ import annotations
 
@@ -10,14 +10,6 @@ LAYOUT_POLICY = "symmetric-native-fingers-with-edge-dummies-v3"
 ROUTE_WIDTH_UM = 0.30
 BUS_CLEARANCE_UM = 0.55
 GRID_UM = 0.005
-
-
-def build_ota_4t(instances, diff_cell, mirror_cell):
-    """Route the OTA using components built by its primitive providers."""
-    gf, layer, _nfet, _pfet = _backend()
-    diff_geometry = instances["xdp"]
-    mirror_geometry = instances["xcm"]
-    return _ota_4t(gf, layer, diff_cell, mirror_cell, diff_geometry, mirror_geometry)
 
 
 def _backend():
@@ -127,58 +119,6 @@ def _bussed_mos(gf, layer, factory, kind, length, wf, nf):
     _add_port(component, layer, "S", source, 2)
     _add_port(component, layer, "D", drain, 3)
     _add_port(component, layer, "B", body, 4)
-    return component
-
-
-def _ota_4t(gf, layer, diff_cell, mirror_cell, diff_geometry, mirror_geometry):
-    name = (
-        f"ota_4t_ldp{diff_geometry.length_m * 1e6:.3f}"
-        f"_wdp{diff_geometry.finger_width_m * 1e6:.3f}_ndp{diff_geometry.nf}"
-        f"_lcm{mirror_geometry.length_m * 1e6:.3f}"
-        f"_wcm{mirror_geometry.finger_width_m * 1e6:.3f}_ncm{mirror_geometry.nf}"
-    ).replace(".", "p")
-    component = _component(gf, name)
-    diff = component.add_ref(diff_cell)
-    mirror = component.add_ref(mirror_cell)
-    mirror.move(
-        (
-            0.0,
-            float(diff.dbbox().top) - float(mirror.dbbox().bottom) + 3.0,
-        )
-    )
-
-    diff_dp = _point(diff.ports["DP"])
-    diff_dn = _point(diff.ports["DN"])
-    mirror_dout = _point(mirror.ports["DOUT"])
-    mirror_dref = _point(mirror.ports["DREF"])
-    left_x = min(float(diff.dbbox().left), float(mirror.dbbox().left)) - 0.9
-    right_x = max(float(diff.dbbox().right), float(mirror.dbbox().right)) + 0.9
-    vout = (left_x, (diff_dp[1] + mirror_dout[1]) / 2.0)
-    mirror_reference = (right_x, (diff_dn[1] + mirror_dref[1]) / 2.0)
-    diff_lane_y = float(diff.dbbox().bottom) - 0.7
-    mirror_lane_y = float(mirror.dbbox().bottom) - 0.7
-    _route_to_side(component, layer.metal3, diff_dp, vout, diff_lane_y)
-    _route_to_side(component, layer.metal3, mirror_dout, vout, mirror_lane_y)
-    _route_to_side(
-        component, layer.metal3, diff_dn, mirror_reference, diff_lane_y
-    )
-    _route_to_side(
-        component, layer.metal3, mirror_dref, mirror_reference, mirror_lane_y
-    )
-
-    mirror_source = _point(mirror.ports["S"])
-    mirror_bulk = _point(mirror.ports["B"])
-    supply = (right_x + 1.2, mirror_source[1])
-    _wire(component, layer.metal2, mirror_source, supply)
-    _add_stack(component, layer, supply, 2, 4)
-    _wire(component, layer.metal4, supply, mirror_bulk)
-
-    _add_port(component, layer, "VOUT", vout, 3)
-    _copy_port(component, layer, "VINP", diff.ports["GP"], 3)
-    _copy_port(component, layer, "VINN", diff.ports["GN"], 3)
-    _copy_port(component, layer, "IBIAS", diff.ports["S"], 2)
-    _add_port(component, layer, "VDD", supply, 4)
-    _copy_port(component, layer, "VSS", diff.ports["B"], 4)
     return component
 
 

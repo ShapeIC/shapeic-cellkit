@@ -17,7 +17,8 @@ limits with `catalog.primitive_geometry_limits("simplediffpair")`; primitive
 and macro renders check them before calling the PCell provider. If the file is
 absent, CellKit adds no geometry limit for that implementation.
 
-The `ota_4t` providers reuse the primitive PCells before assembling the macro.
+The `ota_4t` providers reuse the primitive PCells and own the macro placement
+and routing for each PDK.
 Their `IMPLEMENTATION_FILES` include both primitive providers and the shared
 technology helpers so changes to any of these files affect the macro's
 implementation digest. SKY130A and GF180MCU primitives accept
