@@ -47,6 +47,7 @@ class GeometryLimits:
 
     required_nf: int | None = None
     max_finger_width_m: float | None = None
+    nf_multiple_of: int | None = None
 
     def validate(
         self, geometry: PrimitiveGeometry, primitive: str, instance: str | None = None
@@ -57,6 +58,11 @@ class GeometryLimits:
         if self.required_nf is not None and geometry.nf != self.required_nf:
             raise GeometryConstraintError(
                 f"{target} requires nf={self.required_nf}, received nf={geometry.nf}"
+            )
+        if self.nf_multiple_of is not None and geometry.nf % self.nf_multiple_of:
+            raise GeometryConstraintError(
+                f"{target} requires nf to be a multiple of {self.nf_multiple_of}, "
+                f"received nf={geometry.nf}"
             )
         if (
             self.max_finger_width_m is not None

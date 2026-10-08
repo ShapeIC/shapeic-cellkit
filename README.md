@@ -10,8 +10,9 @@ Shared MOS construction, routing and via helpers live in
 
 An optional `primitives/<name>/<pdk>/geometry.json` declares simple PCell
 limits in SI units. It may contain `required_nf` (active fingers per device,
-excluding dummies) and `max_finger_width_m` (inclusive). For example, the IHP
-`simplediffpair` requires four fingers and at most 10 µm per finger. Query the
+excluding dummies), `nf_multiple_of` (for example, `2` for even `nf`), and
+`max_finger_width_m` (inclusive). For example, the IHP `simplediffpair` requires
+four fingers, while `simplecurrentmirror` requires an even number. Query the
 limits with `catalog.primitive_geometry_limits("simplediffpair")`; primitive
 and macro renders check them before calling the PCell provider. If the file is
 absent, CellKit adds no geometry limit for that implementation.

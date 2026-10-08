@@ -40,18 +40,28 @@ def load_geometry_limits(path: Path) -> GeometryLimits | None:
     if (
         not isinstance(raw, dict)
         or not raw
-        or set(raw) - {"required_nf", "max_finger_width_m"}
+        or set(raw) - {"required_nf", "nf_multiple_of", "max_finger_width_m"}
     ):
         raise ManifestValidationError(
-            f"geometry limits '{path}' must contain only required_nf and/or max_finger_width_m"
+            f"geometry limits '{path}' must contain only required_nf, "
+            "nf_multiple_of and/or max_finger_width_m"
         )
     required_nf = raw.get("required_nf")
+    nf_multiple_of = raw.get("nf_multiple_of")
     max_width = raw.get("max_finger_width_m")
     if "required_nf" in raw and (
         isinstance(required_nf, bool) or not isinstance(required_nf, int) or required_nf < 1
     ):
         raise ManifestValidationError(
             f"geometry limits '{path}' required_nf must be a positive integer"
+        )
+    if "nf_multiple_of" in raw and (
+        isinstance(nf_multiple_of, bool)
+        or not isinstance(nf_multiple_of, int)
+        or nf_multiple_of < 1
+    ):
+        raise ManifestValidationError(
+            f"geometry limits '{path}' nf_multiple_of must be a positive integer"
         )
     if "max_finger_width_m" in raw and (
         isinstance(max_width, bool)
@@ -62,7 +72,11 @@ def load_geometry_limits(path: Path) -> GeometryLimits | None:
         raise ManifestValidationError(
             f"geometry limits '{path}' max_finger_width_m must be positive and finite"
         )
-    return GeometryLimits(required_nf=required_nf, max_finger_width_m=max_width)
+    return GeometryLimits(
+        required_nf=required_nf,
+        nf_multiple_of=nf_multiple_of,
+        max_finger_width_m=max_width,
+    )
 
 
 def load_primitive_descriptor(path: Path) -> PrimitiveDescriptor:
