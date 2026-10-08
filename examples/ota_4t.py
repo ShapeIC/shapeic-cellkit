@@ -2,35 +2,46 @@
 import os
 from pathlib import Path
 
-from shapeic_cellkit import CellKitCatalog, PrimitiveGeometry
-
-# Raíz del repositorio, independiente del directorio de ejecución.
-ROOT = Path(__file__).resolve().parents[1]
+from shapeic_cellkit import CellKitCatalog, PrimitiveGeometry, run_drc
 
 catalog = CellKitCatalog.open(
-    root=ROOT,
+    root=Path.cwd(),
     pdk="ihp-sg13g2",
     pdk_root=os.environ["PDK_ROOT"],
 )
 
+output_dir = Path("build")
+
 macro = catalog.macro_layout("ota_4t")
 
-# Geometría de cada primitiva que compone el OTA.
 rendered = macro.render({
-    "xdp": PrimitiveGeometry(  # Par diferencial NMOS
+    "xdp": PrimitiveGeometry(  # Diffpair NMOS
         length_m=0.4e-6,
         finger_width_m=1.5e-6,
         nf=4,
     ),
-    "xcm": PrimitiveGeometry(  # Espejo de corriente PMOS
+    "xcm": PrimitiveGeometry(  # Currentmirror PMOS
         length_m=0.4e-6,
         finger_width_m=2.0e-6,
-        nf=4,
+        nf=2,
     ),
 })
 
-output = ROOT / "build" / "ota_4t.gds"
+output = output_dir/"gds"/"ota_4t.gds"
 output.parent.mkdir(parents=True, exist_ok=True)
 rendered.component.write_gds(str(output))
 
-print(f"GDS generado: {output}")
+drc_script = (
+    catalog.pdk_root
+    / "libs.tech/klayout/tech/drc/ihp-sg13g2.drc"
+)
+
+drc_result = run_drc(
+    gds_path=output,
+    drc_script=drc_script,
+    output_dir=output_dir/"drc"/"ota_4t"
+)
+
+print("DRC:", "PASS" if drc_result.passed else "FAIL")
+print("Reporte:", drc_result.report_path)
+print("Log:", drc_result.log_path)

@@ -37,12 +37,12 @@ def _ota_4t(gf, tech, diff_cell, mirror_cell, diff_geometry, mirror_geometry):
     mirror.move(
         (
             0.0,
-            float(diff.dbbox().top) - float(mirror.dbbox().bottom) + 4.0,
+            float(diff.dbbox().top) - float(mirror.dbbox().bottom) + 1.0,
         )
     )
 
-    diff_dp = _point(diff.ports["DP"])
-    diff_dn = _point(diff.ports["DN"])
+    diff_dp = (_point(diff.ports["DP"])[0], _point(diff.ports["DP"])[1]+diff.ports["DP"].width/2-0.3/2)
+    diff_dn = (_point(diff.ports["DN"])[0], _point(diff.ports["DN"])[1]+diff.ports["DN"].width/2-0.3/2)
     mirror_dout = _point(mirror.ports["DOUT"])
     mirror_dref = _point(mirror.ports["DREF"])
     left_x = min(
@@ -50,18 +50,24 @@ def _ota_4t(gf, tech, diff_cell, mirror_cell, diff_geometry, mirror_geometry):
         float(mirror.dbbox().left),
         diff_dp[0],
         mirror_dout[0],
-    ) - 1.0
+    ) - 0.5
     right_x = max(
         float(diff.dbbox().right),
         float(mirror.dbbox().right),
         diff_dn[0],
         mirror_dref[0],
-    ) + 1.0
-    route_y = float(diff.dbbox().top) + 2.0
+    ) + 0.5
+    route_y = float(diff.dbbox().top) + 0.5
     vout = (left_x, route_y)
     internal = (right_x, route_y)
     for terminal in (diff_dp, diff_dn, mirror_dout, mirror_dref, vout):
-        _add_metal1_metal2_via(component, tech, terminal)
+        _populate_via_stack(
+            component, 
+            tech,
+            row_width=0.3,
+            column_width=0.3,
+            center=terminal
+        )
     for terminal in (diff_dp, mirror_dout):
         _wire(component, terminal, vout, layer="Metal2drawing")
     for terminal in (diff_dn, mirror_dref):
