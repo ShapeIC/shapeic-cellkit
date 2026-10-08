@@ -15,7 +15,7 @@ IMPLEMENTATION_FILES = (
 def build(geometry):
     technology = _technology()
     gf, cells, mos_core, tech = technology._backend()
-    component = _current_mirror(
+    component = _current_mirror_v2(
         gf,
         cells,
         mos_core,
@@ -86,6 +86,109 @@ def _current_mirror(gf, cells, mos_core, tech, length, wf, nf):
     )
     return component
 
+
+def _current_mirror_v2(gf, cells, mos_core, tech, length, wf, nf):
+    technology = _technology()
+    component = gf.Component(technology._cell_name("currentmirror", length, wf, nf))
+    device = technology._interdigitated_mos_devices(gf, "device", mos_core, tech, "pmos", length, wf, 2*nf, shared_gates=True)
+    device.rotate(180)
+    device.xmin=0
+    device.ymin=0
+    component.add_ref(device)
+
+    device_sep = 0.2
+    metal1BusWidth = 0.3
+    metal1Sep = 0.2
+
+    connWidth = 0.3
+
+    
+    technology._connect_ports_to_bus(
+        component, 
+        tech,
+        ports=[device.ports["DA"], device.ports["G"]],
+        offset=(device.xmax-device.xmin)/2+metal1Sep+metal1BusWidth/2,
+        verticalConnWidth=0.3,
+        horizontalLayer="Metal2drawing",
+        verticalLayer="Metal1drawing",
+        busWidth=metal1BusWidth,
+        busSide="left",
+        busDirection="Vertical",
+        pinName="DREF",
+        pinLayer="Metal1pin",
+        pinTextLayer="Metal1text"
+    )
+    technology._populate_via_stack(
+        component,
+        tech,
+        column_width=0.3,
+        row_width=device.ports["G"].width,
+        center=device.ports["G"].center
+    )
+
+    technology._add_port(
+        component,
+        pinName="DOUT",
+        center=device.ports["DB"].center,
+        width=device.ports["DB"].width,
+        length=0.3,
+        pinLayer="Metal2pin",
+        pinTextLayer="Metal2text"
+    )
+    technology._add_port(
+        component,
+        pinName="S",
+        center=device.ports["S"].center,
+        width=device.ports["S"].width,
+        length=0.3,
+        pinLayer="Metal2pin",
+        pinTextLayer="Metal2text"
+    )
+
+    guard_bbox = (
+        (component.xmin, component.ymin),
+        (component.xmax, component.ymax),
+    )
+    component.add_ref(cells.guard_ring(
+        width=0.32,
+        guardRingSpacing=0.22,
+        bbox=guard_bbox,
+        guardRingType="nwell"
+    ))
+    technology._add_port(
+        component,
+        pinName="B",
+        center=((component.xmin+component.xmax)/2, component.ymin + 0.8/2),
+        width=0.32,
+        length=0.32
+    )
+
+    technology._add_segment(
+        component,
+        start=device.ports["dummy0GS"].center,
+        end=(device.ports["dummy0GS"].center[0], component.ymax-0.8/2),
+        width=0.3,
+        layer="Metal1drawing"
+    )
+    technology._add_segment(
+        component,
+        start=device.ports["dummy1GS"].center,
+        end=(device.ports["dummy1GS"].center[0], component.ymax-0.8/2),
+        width=0.3,
+        layer="Metal1drawing"
+    )
+
+    component.add_polygon(
+        [
+            (component.xmin, component.ymin),
+            (component.xmax, component.ymin),
+            (component.xmax, component.ymax),
+            (component.xmin, component.ymax),
+        ],
+        layer="NWelldrawing"
+    )
+
+    return component
 
 @cache
 def _technology():

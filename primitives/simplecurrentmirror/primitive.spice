@@ -1,0 +1,8 @@
+.subckt {{subckt_name}} DREF DOUT S B
+*vd vg vs vb
+M1 DREF DREF S B {{model}} w={{w}}u l={{l}}u ng={{ng}} m={{m}} mm_ok=1
+M2 DOUT DREF S B {{model}} w={{w}}u l={{l}}u ng={{ng}} m={{m}} mm_ok=1
+
+*dummies
+M3 DREF B B B {{model}} w={{w_dummy}} l={{l_dummy}} ng={{ng_dummy}} m=1 mm_ok=1
+.ends {{subckt_name}}
