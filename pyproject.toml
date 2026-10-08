@@ -1,17 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "shapeic-cellkit"
 version = "0.1.0"
-description = "Library of primitives"
-requires-python = ">=3.12"
+description = "Library of analog primitives and macro layouts"
+requires-python = ">=3.12,<3.13"
+
+dependencies = [
+	"ihp-gdsfactory @ git+https://github.com/lild4d4/IHP.git@9344e544f88fa236f65c92b0d9411b9dc2e692d8",
+	"sky130 @ git+https://github.com/gdsfactory/skywater130.git@main",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["shapeic_cellkit*"]
-exclude = ["pdk*"]
 namespaces = true
-
 
 [tool.pyright]
 venvPath = "."
 venv = ".venv"
-extraPaths = ["IHP", "src"]
