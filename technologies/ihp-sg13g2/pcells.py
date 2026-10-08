@@ -250,7 +250,45 @@ def _bussed_mos_device(gf, mos_core, tech, kind, length, wf, nf):
     )
     return component
 
-def _interdigitated_mos_devices(gf, cell_name, mos_core, tech, kind, length, wf, nf):
+def _get_gates(component):
+    gates_list = []
+    for p in component.ports:
+        if p.name=="G":
+            continue
+        if p.name.startswith("G"):
+            #idx = int(p.name.replace("G", ""))
+            gates_list.append(p)
+    return gates_list
+
+def _interdigitated_raw_device(gf, cell_name, mos_core, tech, kind, length, wf, nf):
+    raw = _ihp_mos_device(mos_core, tech, kind, length, wf, nf+2) #+2 for dummys
+    component = gf.Component(_cell_name(f"{cell_name}_{kind}", length, wf, nf))
+    component.add_ref(raw)
+
+    sources, drains = _get_sd_ports_even_odd(raw)
+    gates = _get_gates(raw)
+
+    dummiesS = [sources[0], sources[-1]]
+    dummiesG = [gates[0], gates[-1]]
+
+    sources = sources[1:-1] #remove dummies
+    gates = gates[1:-1]
+
+    drainsA = drains[::2]
+    gatesA = [gates[0]]
+    gatesB = gates[1:3]
+    for i in range(3, len(gates), 4):
+        gatesA.extend(gates[i:i+2])
+        gatesB.extend(gates[i+2:i+4])
+
+    drainsB = drains[1::2]
+
+    ports={"drainsA": drainsA, "gatesA": gatesA, "drainsB": drainsB, "gatesB": gatesB, "sources": sources}
+
+
+    return component, ports
+
+def _interdigitated_mos_devices(gf, cell_name, mos_core, tech, kind, length, wf, nf, shared_gates=False):
     raw = _ihp_mos_device(mos_core, tech, kind, length, wf, nf+2) #+2 for dummys
     component = gf.Component(_cell_name(f"{cell_name}_{kind}", length, wf, nf))
     component.add_ref(raw)
@@ -260,39 +298,75 @@ def _interdigitated_mos_devices(gf, cell_name, mos_core, tech, kind, length, wf,
     metal1Sep = 0.2
     metal2Sep = 0.21
 
-    _connect_ports_to_bus(
-        component, 
-        tech,
-        ports=[raw.ports["G3"], raw.ports["G4"]],
-        offset=raw.ports["G3"].width/2+metal1BusWidth/2,
-        verticalConnWidth=length,
-        horizontalLayer="Metal1drawing",
-        verticalLayer="GatPolydrawing",
-        busWidth=metal1BusWidth,
-        busSide="bottom",
-        busDirection="Horizontal",
-        pinName="GA",
-        pinLayer="Metal1pin",
-    )
-    _connect_ports_to_bus(
-        component, 
-        tech,
-        ports=[raw.ports["G2"], raw.ports["G5"]],
-        offset=raw.ports["G2"].width/2+metal1BusWidth/2+metal1BusWidth+metal1Sep,
-        verticalConnWidth=length,
-        horizontalLayer="Metal1drawing",
-        verticalLayer="GatPolydrawing",
-        busWidth=metal1BusWidth,
-        busSide="bottom",
-        busDirection="Horizontal",
-        pinName="GB",
-        pinLayer="Metal1pin",
-    )
+    sources, drains = _get_sd_ports_even_odd(raw)
+    gates = _get_gates(raw)
+
+    dummiesS = [sources[0], sources[-1]]
+    dummiesG = [gates[0], gates[-1]]
+
+    sources = sources[1:-1] #remove dummies
+    gates = gates[1:-1]
+
+    drainsA = drains[::2]
+    gatesA = [gates[0]]
+    gatesB = gates[1:3]
+    for i in range(3, len(gates), 4):
+        gatesA.extend(gates[i:i+2])
+        gatesB.extend(gates[i+2:i+4])
+
+    drainsB = drains[1::2]
+
+    if shared_gates:
+        _connect_ports_to_bus(
+            component, 
+            tech,
+            ports=gatesA+gatesB,
+            offset=raw.ports["G3"].width/2+metal1BusWidth/2,
+            verticalConnWidth=length,
+            horizontalLayer="Metal1drawing",
+            verticalLayer="GatPolydrawing",
+            busWidth=metal1BusWidth,
+            busSide="bottom",
+            busDirection="Horizontal",
+            pinName="G",
+            pinLayer="Metal1pin",
+        )
+
+
+    else:
+        _connect_ports_to_bus(
+            component, 
+            tech,
+            ports=gatesB,
+            offset=raw.ports["G3"].width/2+metal1BusWidth/2,
+            verticalConnWidth=length,
+            horizontalLayer="Metal1drawing",
+            verticalLayer="GatPolydrawing",
+            busWidth=metal1BusWidth,
+            busSide="bottom",
+            busDirection="Horizontal",
+            pinName="GA",
+            pinLayer="Metal1pin",
+        )
+        _connect_ports_to_bus(
+            component, 
+            tech,
+            ports=gatesA,
+            offset=raw.ports["G2"].width/2+metal1BusWidth/2+metal1BusWidth+metal1Sep,
+            verticalConnWidth=length,
+            horizontalLayer="Metal1drawing",
+            verticalLayer="GatPolydrawing",
+            busWidth=metal1BusWidth,
+            busSide="bottom",
+            busDirection="Horizontal",
+            pinName="GB",
+            pinLayer="Metal1pin",
+        )
 
     _connect_ports_to_bus(
         component, 
         tech,
-        ports=[raw.ports["SD2"], raw.ports["SD4"]],
+        ports=sources,
         offset=raw.ports["SD1"].width/2+metal1BusWidth/2,
         verticalConnWidth=0.16,
         horizontalLayer="Metal2drawing",
@@ -306,7 +380,7 @@ def _interdigitated_mos_devices(gf, cell_name, mos_core, tech, kind, length, wf,
     _connect_ports_to_bus(
         component, 
         tech,
-        ports=[raw.ports["SD1"], raw.ports["SD5"]],
+        ports=drainsA,
         offset=raw.ports["SD0"].width/2+metal2BusWidth/2+metal2BusWidth+metal2Sep,
         verticalConnWidth=0.16,
         horizontalLayer="Metal2drawing",
@@ -320,7 +394,7 @@ def _interdigitated_mos_devices(gf, cell_name, mos_core, tech, kind, length, wf,
     _connect_ports_to_bus(
         component, 
         tech,
-        ports=[raw.ports["SD3"]],
+        ports=drainsB,
         offset=raw.ports["SD1"].width/2+metal1BusWidth/2+2*metal2BusWidth+2*metal2Sep,
         verticalConnWidth=0.16,
         horizontalLayer="Metal2drawing",
@@ -335,9 +409,9 @@ def _interdigitated_mos_devices(gf, cell_name, mos_core, tech, kind, length, wf,
     _connect_diff_to_gate(
         component,
         tech,
-        gate_ports=[raw.ports["G1"]],
-        diff_ports=[raw.ports["SD0"]],
-        offset=raw.ports["G1"].width/2+metal1BusWidth/2,
+        gate_ports=[dummiesG[0]],
+        diff_ports=[dummiesS[0]],
+        offset=dummiesG[0].width/2+metal1BusWidth/2,
         verticalConnWidthGates = length,
         verticalConnWidthDiff = 0.16,
         busWidth = 0.3,
@@ -349,9 +423,9 @@ def _interdigitated_mos_devices(gf, cell_name, mos_core, tech, kind, length, wf,
     _connect_diff_to_gate(
         component,
         tech,
-        gate_ports=[raw.ports["G6"]],
-        diff_ports=[raw.ports["SD6"]],
-        offset=raw.ports["G6"].width/2+metal1BusWidth/2,
+        gate_ports=[dummiesG[1]],
+        diff_ports=[dummiesS[1]],
+        offset=dummiesG[1].width/2+metal1BusWidth/2,
         verticalConnWidthGates = length,
         verticalConnWidthDiff = 0.16,
         busWidth = 0.3,
@@ -469,14 +543,19 @@ def _add_external_ports(component, ports):
 
 
 def _validate_external_port_isolation(component, kdb, port_names):
-    polygons = component.get_polygons(merge=True, by="name").get(
-        "Metal1drawing", []
-    )
-    if not polygons:
-        raise ValueError("PCell has no Metal1 geometry")
+    polygons_by_layer = component.get_polygons(merge=True, by="name")
     owners = {}
     for name in port_names:
-        center = _point(component.ports[name])
+        port = component.ports[name]
+        pin_layer = component.kcl.layout.get_info(port.layer).name
+        drawing_layer = {
+            "Metal1pin": "Metal1drawing",
+            "Metal2pin": "Metal2drawing",
+        }.get(pin_layer)
+        if drawing_layer is None:
+            raise ValueError(f"external port {name} uses unsupported layer {pin_layer}")
+        polygons = polygons_by_layer.get(drawing_layer, [])
+        center = _point(port)
         point = kdb.Point(
             round(center[0] / component.kcl.dbu),
             round(center[1] / component.kcl.dbu),
@@ -486,15 +565,16 @@ def _validate_external_port_isolation(component, kdb, port_names):
         ]
         if len(matches) != 1:
             raise ValueError(
-                f"external port {name} touches {len(matches)} Metal1 components"
+                f"external port {name} touches {len(matches)} "
+                f"{drawing_layer} components"
             )
-        component_index = matches[0]
-        if component_index in owners:
+        component_key = (drawing_layer, matches[0])
+        if component_key in owners:
             raise ValueError(
-                f"external ports {owners[component_index]} and {name} are shorted "
-                "on Metal1"
+                f"external ports {owners[component_key]} and {name} are shorted "
+                f"on {drawing_layer}"
             )
-        owners[component_index] = name
+        owners[component_key] = name
 
 
 def _point(port):
